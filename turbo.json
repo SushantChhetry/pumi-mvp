@@ -1,21 +1,40 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "ui": "tui",
-  "tasks": {
+  "pipeline": {
     "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**"]
-    },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
-    "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": [
+        "^build"
+      ],
+      "env": [
+        "SLACK_CHANNEL_ID",
+        "SLACK_BOT_TOKEN"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*"
+      ],
+      "outputs": [
+        ".next/**",
+        "dist/**",
+        "!.next/cache/**"
+      ]
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "dependsOn": [
+        "^dev"
+      ]
+    },
+    "lint": {
+      "dependsOn": [
+        "^lint"
+      ]
+    },
+    "check-types": {
+      "dependsOn": [
+        "^check-types"
+      ]
     }
   }
 }
