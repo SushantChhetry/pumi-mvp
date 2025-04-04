@@ -1,39 +1,24 @@
+/**
+ * NextAuth route handler using the App Router (Next.js 13+).
+ *
+ * This sets up the authentication endpoint at /api/auth/[...nextauth]
+ * using the previously defined `authOptions` config.
+ *
+ * Both GET and POST requests are handled by the same NextAuth instance,
+ * which supports login, callback, and session-related routes.
+ *
+ * A custom logging wrapper logs the HTTP method and URL of each request.
+ */
+
 import NextAuth from 'next-auth';
-import SlackProvider from 'next-auth/providers/slack';
+import { authOptions } from './options';
+import type { NextRequest } from 'next/server';
 
-declare module 'next-auth' {
-  interface Session {
-    accessToken?: string;
-  }
-}
+// Wrapped handler with logging; using unknown[] for additional parameters.
+const handler = (req: NextRequest, ...args: unknown[]) => {
+  console.log('[NextAuth Route Called]', req.method, req.url);
+  return NextAuth(authOptions)(req, ...args);
+};
 
-const handler = NextAuth({
-  providers: [
-    SlackProvider({
-      clientId: process.env.SLACK_CLIENT_ID!,
-      clientSecret: process.env.SLACK_CLIENT_SECRET!,
-    }),
-  ],
-  secret: process.env.NEXTAUTH_SECRET,
-  callbacks: {
-    async jwt({ token, account }) {
-      console.log('[JWT CALLBACK] token:', token);
-      console.log('[JWT CALLBACK] account:', account);
-      if (account?.provider === 'slack') {
-        token.access_token = account.access_token;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      console.log('[SESSION CALLBACK] token:', token);
-      session.accessToken = token.access_token as string;
-      return session;
-    },
-  },
-  
-  pages: {
-    error: '/auth/error' // Optional: add custom error page
-  }
-});
-
-export { handler as GET, handler as POST };
+export const GET = handler;
+export const POST = handler;
