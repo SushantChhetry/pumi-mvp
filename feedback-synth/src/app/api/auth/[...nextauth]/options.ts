@@ -12,11 +12,14 @@ import SlackProvider from 'next-auth/providers/slack';
 import { NextAuthOptions } from 'next-auth';
 
 export const authOptions: NextAuthOptions = {
+  debug: true,
   // OAuth providers
   providers: [
     SlackProvider({
       clientId: process.env.SLACK_CLIENT_ID!,
       clientSecret: process.env.SLACK_CLIENT_SECRET!,
+      wellKnown: '',
+
       authorization: {
         // Use Slack's bot authorization URL
         url: 'https://slack.com/oauth/v2/authorize',
