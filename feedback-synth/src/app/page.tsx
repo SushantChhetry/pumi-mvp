@@ -1,20 +1,14 @@
 'use client';
 
-import { signIn, signOut, useSession } from "next-auth/react";
+import Link from 'next/link';
 
 export default function HomePage() {
-  const { data: session } = useSession();
-
   return (
-    <main className="p-4">
-      {!session ? (
-        <button onClick={() => signIn('slack')}>Sign in with Slack</button>
-      ) : (
-        <>
-          <p>Signed in as {session.user?.email}</p>
-          <button onClick={() => signOut()}>Sign out</button>
-        </>
-      )}
-    </main>
+      <Link
+        href="/api/auth/slack/install"
+        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded"
+      >
+        Add to Slack
+      </Link>
   );
 }

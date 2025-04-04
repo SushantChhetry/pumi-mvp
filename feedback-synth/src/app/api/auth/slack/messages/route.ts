@@ -1,104 +1,68 @@
 // src/app/api/auth/slack/messages/route.ts
 
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/options';
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 type SlackChannel = {
-  id: string;
-  name: string;
-};
+  id: string
+  name: string
+}
 
 export async function GET() {
-  console.log('[GET] Request received');
+  console.log('[GET] Fetching messages from Supabase-stored Slack bot token')
 
-  const session = await getServerSession(authOptions);
-  console.log('[GET] Session:', JSON.stringify(session, null, 2));
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
-  const token = session?.accessToken;
-  console.log('[GET] Slack access token:', token);
+  // 1. Get stored bot token from Supabase
+  const { data: teams, error } = await supabase.from('slack_teams').select('*').limit(1)
 
-  if (!token) {
-    console.log('[GET] No Slack access token found');
-    return NextResponse.json(
-      { error: 'No Slack access token found' },
-      { status: 401 }
-    );
+  if (error || !teams?.length) {
+    console.error('[GET] Failed to fetch Slack token:', error)
+    return NextResponse.json({ error: 'Bot token not found' }, { status: 500 })
   }
 
+  const token = teams[0].access_token
+
   try {
-    console.log('[GET] Fetching Slack conversations list');
+    // 2. Get channel ID of #user-feedback
     const listRes = await fetch('https://slack.com/api/conversations.list', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const listData = await listRes.json();
-    console.log(
-      '[GET] Raw conversations.list response:',
-      JSON.stringify(listData, null, 2)
-    );
+      headers: { Authorization: `Bearer ${token}` }
+    })
+
+    const listData = await listRes.json()
 
     if (!listData.ok) {
-      console.error(
-        '[GET] Slack API error (conversations.list):',
-        listData.error
-      );
-      return NextResponse.json(
-        {
-          error: 'Slack API error (conversations.list)',
-          details: listData,
-        },
-        { status: 500 }
-      );
+      console.error('[GET] Slack error: conversations.list', listData.error)
+      return NextResponse.json({ error: listData.error }, { status: 500 })
     }
 
-    console.log('[GET] Searching for "user-feedback" channel');
-    const feedbackChannel =
-      (listData.channels as SlackChannel[] | undefined)?.find(
-        (ch: SlackChannel) => ch.name === 'user-feedback'
-      );
-    console.log('[GET] Feedback channel:', feedbackChannel);
+    const feedbackChannel = (listData.channels as SlackChannel[]).find(
+      (ch) => ch.name === 'user-feedback'
+    )
 
     if (!feedbackChannel) {
-      console.log('[GET] Channel "user-feedback" not found');
-      return NextResponse.json({ error: 'Channel not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
     }
 
-    console.log(
-      '[GET] Fetching Slack channel history for channel ID:',
-      feedbackChannel.id
-    );
+    // 3. Fetch channel messages
     const historyRes = await fetch(
       `https://slack.com/api/conversations.history?channel=${feedbackChannel.id}`,
       { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const historyData = await historyRes.json();
-    console.log(
-      '[GET] Raw conversations.history response:',
-      JSON.stringify(historyData, null, 2)
-    );
+    )
+
+    const historyData = await historyRes.json()
 
     if (!historyData.ok) {
-      console.error(
-        '[GET] Slack API error (conversations.history):',
-        historyData.error
-      );
-      return NextResponse.json(
-        {
-          error: 'Slack API error (conversations.history)',
-          details: historyData,
-        },
-        { status: 500 }
-      );
+      console.error('[GET] Slack error: conversations.history', historyData.error)
+      return NextResponse.json({ error: historyData.error }, { status: 500 })
     }
 
-    console.log('[GET] Returning messages as JSON');
-    return NextResponse.json({ messages: historyData.messages });
-  } catch (err: unknown) {
-    console.error('[Slack Fetch Error]', err);
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json(
-      { error: `Failed to fetch messages: ${errorMessage}` },
-      { status: 500 }
-    );
+    return NextResponse.json({ messages: historyData.messages })
+  } catch (err) {
+    console.error('[GET] Unexpected error:', err)
+    return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
   }
 }
