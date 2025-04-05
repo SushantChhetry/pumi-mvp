@@ -7,11 +7,11 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error('[Slack OAuth Error]', error)
-    return NextResponse.redirect(`/?error=${error}`)
+    return NextResponse.redirect(new URL(`/?error=${error}`, req.nextUrl.origin))
   }
 
   if (!code) {
-    return NextResponse.redirect('/?error=missing_code')
+    return NextResponse.redirect(new URL('/?error=missing_code', req.nextUrl.origin))
   }
 
   // Initialize Supabase
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
     if (!data.ok) {
       console.error('[Slack OAuth Failed]', data)
-      return NextResponse.redirect('/?error=slack_oauth_failed')
+      return NextResponse.redirect(new URL('/?error=slack_oauth_failed', req.nextUrl.origin))
     }
 
     const { access_token, team, bot_user_id } = data
@@ -52,13 +52,13 @@ export async function GET(req: NextRequest) {
 
     if (dbError) {
       console.error('[Supabase Upsert Error]', dbError)
-      return NextResponse.redirect('/?error=supabase_upsert_failed')
+      return NextResponse.redirect(new URL('/?error=supabase_upsert_failed', req.nextUrl.origin))
     }
 
     console.log(`[Slack Bot Installed] Team: ${team.name} (${team.id})`)
-    return NextResponse.redirect('/messages')
+    return NextResponse.redirect(new URL('/messages', req.nextUrl.origin))
   } catch (err) {
     console.error('[OAuth Callback Error]', err)
-    return NextResponse.redirect('/?error=unexpected_error')
+    return NextResponse.redirect(new URL('/?error=unexpected_error', req.nextUrl.origin))
   }
 }
