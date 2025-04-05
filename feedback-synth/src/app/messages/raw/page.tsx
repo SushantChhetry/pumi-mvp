@@ -56,7 +56,7 @@ export default function RawMessagesPage() {
 
     fetchMessages()
 
-    intervalId = setInterval(fetchMessages, 100000)
+    intervalId = setInterval(fetchMessages, 1000000)
 
     return () => {
       if (intervalId) clearInterval(intervalId)
