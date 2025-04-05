@@ -32,8 +32,8 @@ export async function GET() {
     return NextResponse.json({ message: 'Not enough content to summarize meaningfully.' })
   }
 
-  // 3. Use OpenAI to summarize
   try {
+    // 3. Use OpenAI to summarize
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -65,13 +65,45 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to summarize messages' }, { status: 500 })
     }
 
-    // 4. Store summary (optional)
+    // 4. Store summary in Supabase
     const { error: insertError } = await supabase
       .from('slack_message_summaries')
       .insert({ summary })
 
     if (insertError) {
       console.error('[Supabase Insert Error]', insertError)
+    }
+
+    // 5. Post summary to Slack
+    const { data: teams, error: teamError } = await supabase.from('slack_teams').select('*').limit(1)
+
+    if (teamError || !teams?.length) {
+      console.error('[Slack Post Error] Missing bot token')
+    } else {
+      const token = teams[0].access_token
+      const channelId = process.env.SLACK_SUMMARY_CHANNEL_ID
+
+      if (!channelId) {
+        console.error('[Slack Post Error] Missing SLACK_SUMMARY_CHANNEL_ID env var')
+      } else {
+        const postRes = await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            channel: channelId,
+            text: `🧠 *Monthly Feedback Summary:*\n\n${summary}`
+          })
+        })
+
+        const postData = await postRes.json()
+
+        if (!postData.ok) {
+          console.error('[Slack Post Error]', postData)
+        }
+      }
     }
 
     return NextResponse.json({ summary })

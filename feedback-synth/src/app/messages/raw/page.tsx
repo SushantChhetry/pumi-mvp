@@ -10,33 +10,57 @@ interface SlackMessage {
   created_at: string
 }
 
+interface SlackUserMap {
+  [userId: string]: string
+}
+
 export default function RawMessagesPage() {
   const [messages, setMessages] = useState<SlackMessage[]>([])
+  const [usernames, setUsernames] = useState<SlackUserMap>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [days, setDays] = useState(7)
   const [search, setSearch] = useState('')
   const [summary, setSummary] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null
+
     async function fetchMessages() {
-      setLoading(true)
       try {
+        if (!loading) setRefreshing(true)
+
         const res = await fetch(`/api/slack/messages/raw?days=${days}`)
         const data = await res.json()
-
         if (!res.ok) throw new Error(data.error || 'Failed to fetch messages.')
-
         setMessages(data.messages)
         setSummary(null)
+
+        const usersRes = await fetch('/api/slack/users')
+        const usersData = await usersRes.json()
+        if (usersRes.ok) {
+          const userMap: SlackUserMap = {}
+          usersData.users.forEach((user: { id: string; name: string }) => {
+            userMap[user.id] = user.name
+          })
+          setUsernames(userMap)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
         setLoading(false)
+        setRefreshing(false)
       }
     }
 
     fetchMessages()
+
+    intervalId = setInterval(fetchMessages, 100000)
+
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+    }
   }, [days])
 
   const filteredMessages = messages.filter((msg) =>
@@ -78,6 +102,8 @@ export default function RawMessagesPage() {
         <button onClick={handleSummarize} style={{ marginLeft: '1rem', padding: '4px 8px' }}>
           Summarize
         </button>
+
+        {refreshing && <span style={{ marginLeft: '1rem' }}>🔄 Refreshing...</span>}
       </div>
 
       {loading && <p>Loading...</p>}
@@ -102,7 +128,7 @@ export default function RawMessagesPage() {
             <ul>
               {group.map((msg) => (
                 <li key={msg.id} style={{ marginBottom: '1rem' }}>
-                  <strong>{msg.slack_user_id}</strong> @{' '}
+                  <strong>@{usernames[msg.slack_user_id] || msg.slack_user_id}</strong> @{' '}
                   {new Date(msg.created_at).toLocaleString()}
                   <p style={{ marginTop: '0.25rem' }}>{msg.text}</p>
                 </li>
