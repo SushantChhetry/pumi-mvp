@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@notionhq/client": "^2.3.0",
     "@slack/web-api": "^7.9.1",
     "@supabase/supabase-js": "^2.49.4",
     "next": "15.2.4",
