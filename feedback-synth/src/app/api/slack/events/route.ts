@@ -90,9 +90,44 @@ function buildSlackBlocks(parsed: ParsedFeedback) {
         type: 'mrkdwn',
         text: `:rotating_light: *Summary*: ${parsed.summary}\n*Tag*: ${parsed.tag}\n*Urgency*: ${parsed.urgency}\n*Next Step*: ${parsed.nextStep}`
       }
+    },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '✅ Confirm'
+          },
+          style: 'primary',
+          value: JSON.stringify(parsed), // pass parsed GPT data
+          action_id: 'confirm_feedback'
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '✏️ Edit'
+          },
+          value: JSON.stringify(parsed),
+          action_id: 'edit_feedback'
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '🚩 Flag'
+          },
+          style: 'danger',
+          value: JSON.stringify(parsed),
+          action_id: 'flag_feedback'
+        }
+      ]
     }
   ]
 }
+
 
 // 4) Post to Slack with blocks
 async function sendSlackMessage(channel: string, blocks: SlackBlock[], token: string, fallbackText: string) {
