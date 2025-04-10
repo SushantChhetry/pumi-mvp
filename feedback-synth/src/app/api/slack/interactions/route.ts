@@ -1,37 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { Client as NotionClient } from '@notionhq/client'
+
+const notion = new NotionClient({
+  auth: process.env.NOTION_SECRET
+})
 
 export async function POST(request: NextRequest) {
-  // 1. Verify Slack signature (similar to your events route)
   const slackSigningSecret = process.env.SLACK_SIGNING_SECRET!
   const timestamp = request.headers.get('x-slack-request-timestamp')!
   const rawBody = await request.text()
   const sigBaseString = `v0:${timestamp}:${rawBody}`
-  const mySignature =
-    'v0=' +
-    crypto
-      .createHmac('sha256', slackSigningSecret)
-      .update(sigBaseString, 'utf8')
-      .digest('hex')
+  const mySignature = 'v0=' + crypto
+    .createHmac('sha256', slackSigningSecret)
+    .update(sigBaseString, 'utf8')
+    .digest('hex')
   const slackSignature = request.headers.get('x-slack-signature')!
 
   if (!secureCompare(mySignature, slackSignature)) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
-  // 2. Slack sends the interactive payload as form-encoded in `payload`
-  //    We need to decode it and parse JSON
+  // Parse Slack payload (form-encoded)
   const payloadStr = decodeURIComponent(rawBody.split('payload=')[1] || '')
   const payload = JSON.parse(payloadStr)
 
-  // 3. Check the type of interactive event
+  // Handle modal submission
+  if (payload.type === 'view_submission' && payload.view?.callback_id === 'edit_feedback_modal') {
+    const values = payload.view.state.values
+    const summary = values.summary_block.summary_input.value
+    const tag = values.tag_block.tag_input.value
+    const urgency = values.urgency_block.urgency_input.value
+    const nextStep = values.next_step_block.next_step_input.value
+
+    await handleConfirm(payload, { summary, tag, urgency, nextStep })
+    return NextResponse.json({ response_action: 'clear' }) // close the modal
+  }
+
+  // Handle button clicks
   if (payload.type === 'block_actions') {
     const action = payload.actions[0]
     const actionId = action.action_id
-    // The parsed GPT data is in action.value (JSON string)
     const gptData = JSON.parse(action.value || '{}')
 
-    // Switch on the clicked button
     switch (actionId) {
       case 'confirm_feedback':
         await handleConfirm(payload, gptData)
@@ -47,11 +58,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Slack expects a 200 OK (JSON) quickly
   return NextResponse.json({ ok: true })
 }
 
-/** Compare signatures in a timing-safe way */
 function secureCompare(a: string, b: string) {
   if (a.length !== b.length) return false
   let result = 0
@@ -61,21 +70,145 @@ function secureCompare(a: string, b: string) {
   return result === 0
 }
 
-/** Example stub for Confirm */
-async function handleConfirm(payload: { type: string; actions: { action_id: string; value: string }[] }, gptData: { [key: string]: unknown }) {
-  // Maybe you store to Notion, log to DB, or just respond in Slack
-  console.log('Confirming feedback:', gptData)
-  // You could post an update to Slack: "Feedback confirmed!"
+async function postSlackMessage(channel: string, text: string) {
+  const token = process.env.SLACK_BOT_TOKEN!
+  await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ channel, text })
+  })
 }
 
-/** Example stub for Edit */
-async function handleEdit(payload: { type: string; actions: { action_id: string; value: string }[] }, gptData: Record<string, unknown>) {
-  // Maybe open a Slack Modal with the existing data pre-filled
-  console.log('Editing feedback:', gptData)
+async function handleConfirm(payload: any, gptData: any) {
+    console.log('[Confirming Feedback]', gptData)
+  
+    try {
+      // Decode if needed
+      const summary = decodeURIComponent(gptData.summary || '')
+      const tag = decodeURIComponent(gptData.tag || 'Other')
+      const urgency = decodeURIComponent(gptData.urgency || 'Medium')
+      const nextStep = decodeURIComponent(gptData.nextStep || '')
+  
+      await notion.pages.create({
+        parent: { database_id: process.env.NOTION_DB_ID! },
+        properties: {
+          Name: {
+            title: [{ text: { content: summary } }]
+          },
+          Tag: {
+            select: { name: tag }
+          },
+          Urgency: {
+            select: { name: urgency }
+          },
+          NextStep: {
+            rich_text: [{ text: { content: nextStep } }]
+          }
+        }
+      })
+  
+      const channel = payload.channel?.id || payload.container?.channel_id
+      const userId = payload.user?.id
+      if (channel && userId) {
+        await postSlackMessage(channel, `✅ <@${userId}> Your feedback was saved to Notion!`)
+      }
+    } catch (err) {
+      console.error('[Notion Insert Error]', err)
+    }
+  }
+  
+
+async function handleEdit(payload: any, gptData: any) {
+  const token = process.env.SLACK_BOT_TOKEN!
+  const triggerId = payload.trigger_id
+
+  await fetch('https://slack.com/api/views.open', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      trigger_id: triggerId,
+      view: {
+        type: 'modal',
+        callback_id: 'edit_feedback_modal',
+        title: {
+          type: 'plain_text',
+          text: 'Edit Feedback'
+        },
+        blocks: [
+          {
+            type: 'input',
+            block_id: 'summary_block',
+            element: {
+              type: 'plain_text_input',
+              action_id: 'summary_input',
+              initial_value: gptData.summary || ''
+            },
+            label: {
+              type: 'plain_text',
+              text: 'Summary'
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'tag_block',
+            element: {
+              type: 'plain_text_input',
+              action_id: 'tag_input',
+              initial_value: gptData.tag || ''
+            },
+            label: {
+              type: 'plain_text',
+              text: 'Tag'
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'urgency_block',
+            element: {
+              type: 'plain_text_input',
+              action_id: 'urgency_input',
+              initial_value: gptData.urgency || ''
+            },
+            label: {
+              type: 'plain_text',
+              text: 'Urgency'
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'next_step_block',
+            element: {
+              type: 'plain_text_input',
+              action_id: 'next_step_input',
+              initial_value: gptData.nextStep || ''
+            },
+            label: {
+              type: 'plain_text',
+              text: 'Next Step'
+            }
+          }
+        ],
+        submit: {
+          type: 'plain_text',
+          text: 'Save'
+        }
+      }
+    })
+  })
 }
 
-/** Example stub for Flag */
-async function handleFlag(payload: { type: string; actions: { action_id: string; value: string }[] }, gptData: Record<string, unknown>) {
-  // Maybe send a DM to an admin
-  console.log('Flagged feedback:', gptData)
+async function handleFlag(payload: any, gptData: any) {
+  const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C01ABCXYZ'
+  const userId = payload.user?.id
+
+  await postSlackMessage(
+    adminChannel,
+    `🚩 <@${userId}> flagged a feedback:\n\n*Summary:* ${gptData.summary}\n*Tag:* ${gptData.tag}\n*Urgency:* ${gptData.urgency}`
+  )
 }
