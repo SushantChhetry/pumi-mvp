@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { Client as NotionClient } from '@notionhq/client'
+import { createClient } from '@supabase/supabase-js'
 
-const notion = new NotionClient({
-  auth: process.env.NOTION_SECRET
-})
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const notion = new NotionClient({ auth: process.env.NOTION_SECRET })
 
 export async function POST(request: NextRequest) {
   const slackSigningSecret = process.env.SLACK_SIGNING_SECRET!
@@ -21,34 +25,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
-  // Parse Slack payload (form-encoded)
   const payloadStr = decodeURIComponent(rawBody.split('payload=')[1] || '')
   const payload = JSON.parse(payloadStr)
 
-  // Handle modal submission
   if (payload.type === 'view_submission' && payload.view?.callback_id === 'edit_feedback_modal') {
     const values = payload.view.state.values
     const summary = values.summary_block.summary_input.value
-    const tag = values.tag_block.tag_input.value
-    const urgency = values.urgency_block.urgency_input.value
+    const tag = values.tag_block.tag_input.selected_option.value
+    const urgency = values.urgency_block.urgency_input.selected_option.value
     const nextStep = values.next_step_block.next_step_input.value
+    const pageId = payload.view?.private_metadata
 
-    await handleConfirm(payload, { summary, tag, urgency, nextStep })
-    return NextResponse.json({ response_action: 'clear' }) // close the modal
+    await handleConfirm(payload, { summary, tag, urgency, nextStep, pageId })
+    return NextResponse.json({ response_action: 'clear' })
   }
 
-  // Handle button clicks
   if (payload.type === 'block_actions') {
     const action = payload.actions[0]
     const actionId = action.action_id
     const gptData = JSON.parse(action.value || '{}')
+    const teamId = payload.team?.id || payload.team_id
+
+    const { data: teamData } = await supabase
+      .from('slack_teams')
+      .select('access_token')
+      .eq('team_id', teamId)
+      .single()
+
+    if (!teamData?.access_token) {
+      console.error('[Missing Slack bot token]')
+      return NextResponse.json({ error: 'Missing bot token' }, { status: 500 })
+    }
 
     switch (actionId) {
       case 'confirm_feedback':
         await handleConfirm(payload, gptData)
         break
       case 'edit_feedback':
-        await handleEdit(payload, gptData)
+        await handleEdit(payload, gptData, teamData.access_token)
         break
       case 'flag_feedback':
         await handleFlag(payload, gptData)
@@ -94,24 +108,45 @@ async function handleConfirm(payload: any, gptData: any) {
     const tag = cleanText(gptData.tag || 'Other')
     const urgency = cleanText(gptData.urgency || 'Medium')
     const nextStep = cleanText(gptData.nextStep)
+    const pageId = gptData.pageId || payload.view?.private_metadata
 
-    await notion.pages.create({
-      parent: { database_id: process.env.NOTION_DB_ID! },
-      properties: {
-        Name: {
-          title: [{ text: { content: summary } }]
-        },
-        Tag: {
-          select: { name: tag }
-        },
-        Urgency: {
-          select: { name: urgency }
-        },
-        NextStep: {
-          rich_text: [{ text: { content: nextStep } }]
+    if (pageId) {
+      await notion.pages.update({
+        page_id: pageId,
+        properties: {
+          Name: {
+            title: [{ text: { content: summary } }]
+          },
+          Tag: {
+            select: { name: tag }
+          },
+          Urgency: {
+            select: { name: urgency }
+          },
+          NextStep: {
+            rich_text: [{ text: { content: nextStep } }]
+          }
         }
-      }
-    })
+      })
+    } else {
+      await notion.pages.create({
+        parent: { database_id: process.env.NOTION_DB_ID! },
+        properties: {
+          Name: {
+            title: [{ text: { content: summary } }]
+          },
+          Tag: {
+            select: { name: tag }
+          },
+          Urgency: {
+            select: { name: urgency }
+          },
+          NextStep: {
+            rich_text: [{ text: { content: nextStep } }]
+          }
+        }
+      })
+    }
 
     const channel = payload.channel?.id || payload.container?.channel_id
     const userId = payload.user?.id
@@ -119,16 +154,20 @@ async function handleConfirm(payload: any, gptData: any) {
       await postSlackMessage(channel, `✅ <@${userId}> Your feedback was saved to Notion!`)
     }
   } catch (err) {
-    console.error('[Notion Insert Error]', err)
+    console.error('[Notion Insert/Update Error]', err)
   }
 }
 
+async function handleEdit(payload: any, gptData: any, token: string) {
+  console.log('[handleEdit] called with:', gptData)
 
-async function handleEdit(payload: any, gptData: any) {
-  const token = process.env.SLACK_BOT_TOKEN!
   const triggerId = payload.trigger_id
+  if (!triggerId) {
+    console.error('[handleEdit] Missing trigger_id')
+    return
+  }
 
-  await fetch('https://slack.com/api/views.open', {
+  const res = await fetch('https://slack.com/api/views.open', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -139,10 +178,8 @@ async function handleEdit(payload: any, gptData: any) {
       view: {
         type: 'modal',
         callback_id: 'edit_feedback_modal',
-        title: {
-          type: 'plain_text',
-          text: 'Edit Feedback'
-        },
+        private_metadata: gptData.pageId || '',
+        title: { type: 'plain_text', text: 'Edit Feedback' },
         blocks: [
           {
             type: 'input',
@@ -150,37 +187,45 @@ async function handleEdit(payload: any, gptData: any) {
             element: {
               type: 'plain_text_input',
               action_id: 'summary_input',
-              initial_value: gptData.summary || ''
+              initial_value: cleanText(gptData.summary || '')
             },
-            label: {
-              type: 'plain_text',
-              text: 'Summary'
-            }
+            label: { type: 'plain_text', text: 'Summary' }
           },
           {
             type: 'input',
             block_id: 'tag_block',
+            label: { type: 'plain_text', text: 'Tag' },
             element: {
-              type: 'plain_text_input',
+              type: 'static_select',
               action_id: 'tag_input',
-              initial_value: gptData.tag || ''
-            },
-            label: {
-              type: 'plain_text',
-              text: 'Tag'
+              initial_option: {
+                text: { type: 'plain_text', text: cleanText(gptData.tag || 'Feature') },
+                value: cleanText(gptData.tag || 'Feature')
+              },
+              options: [
+                { text: { type: 'plain_text', text: 'Bug' }, value: 'Bug' },
+                { text: { type: 'plain_text', text: 'Feature' }, value: 'Feature' },
+                { text: { type: 'plain_text', text: 'UX' }, value: 'UX' },
+                { text: { type: 'plain_text', text: 'Other' }, value: 'Other' }
+              ]
             }
           },
           {
             type: 'input',
             block_id: 'urgency_block',
+            label: { type: 'plain_text', text: 'Urgency' },
             element: {
-              type: 'plain_text_input',
+              type: 'static_select',
               action_id: 'urgency_input',
-              initial_value: gptData.urgency || ''
-            },
-            label: {
-              type: 'plain_text',
-              text: 'Urgency'
+              initial_option: {
+                text: { type: 'plain_text', text: cleanText(gptData.urgency || 'Medium') },
+                value: cleanText(gptData.urgency || 'Medium')
+              },
+              options: [
+                { text: { type: 'plain_text', text: 'Low' }, value: 'Low' },
+                { text: { type: 'plain_text', text: 'Medium' }, value: 'Medium' },
+                { text: { type: 'plain_text', text: 'High' }, value: 'High' }
+              ]
             }
           },
           {
@@ -189,21 +234,22 @@ async function handleEdit(payload: any, gptData: any) {
             element: {
               type: 'plain_text_input',
               action_id: 'next_step_input',
-              initial_value: gptData.nextStep || ''
+              initial_value: cleanText(gptData.nextStep || '')
             },
-            label: {
-              type: 'plain_text',
-              text: 'Next Step'
-            }
+            label: { type: 'plain_text', text: 'Next Step' }
           }
         ],
-        submit: {
-          type: 'plain_text',
-          text: 'Save'
-        }
+        submit: { type: 'plain_text', text: 'Save' }
       }
     })
   })
+
+  const data = await res.json()
+  if (!data.ok) {
+    console.error('[Slack Modal Error]', data)
+  } else {
+    console.log('[Modal opened successfully]', data)
+  }
 }
 
 async function handleFlag(payload: any, gptData: any) {
