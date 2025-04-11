@@ -28,16 +28,25 @@ export async function POST(request: NextRequest) {
   const payloadStr = decodeURIComponent(rawBody.split('payload=')[1] || '')
   const payload = JSON.parse(payloadStr)
 
-  if (payload.type === 'view_submission' && payload.view?.callback_id === 'edit_feedback_modal') {
-    const values = payload.view.state.values
-    const summary = values.summary_block.summary_input.value
-    const tag = values.tag_block.tag_input.selected_option.value
-    const urgency = values.urgency_block.urgency_input.selected_option.value
-    const nextStep = values.next_step_block.next_step_input.value
-    const pageId = payload.view?.private_metadata
+  if (payload.type === 'view_submission') {
+    if (payload.view?.callback_id === 'edit_feedback_modal') {
+      const values = payload.view.state.values
+      const summary = values.summary_block.summary_input.value
+      const tag = values.tag_block.tag_input.selected_option.value
+      const urgency = values.urgency_block.urgency_input.selected_option.value
+      const nextStep = values.next_step_block.next_step_input.value
+      const pageId = payload.view?.private_metadata
 
-    await handleConfirm(payload, { summary, tag, urgency, nextStep, pageId })
-    return NextResponse.json({ response_action: 'clear' })
+      await handleConfirm(payload, { summary, tag, urgency, nextStep, pageId })
+      return NextResponse.json({ response_action: 'clear' })
+    }
+
+    if (payload.view?.callback_id === 'flag_reason_modal') {
+      const reason = payload.view.state.values.reason_block.reason_input.value
+      const gptData = JSON.parse(payload.view.private_metadata || '{}')
+      await handleFlagSubmission(payload, gptData, reason)
+      return NextResponse.json({ response_action: 'clear' })
+    }
   }
 
   if (payload.type === 'block_actions') {
@@ -65,7 +74,7 @@ export async function POST(request: NextRequest) {
         await handleEdit(payload, gptData, teamData.access_token)
         break
       case 'flag_feedback':
-        await handleFlag(payload, gptData)
+        await handleFlag(payload, gptData, teamData.access_token)
         break
       default:
         console.log('Unknown action:', actionId)
@@ -252,12 +261,74 @@ async function handleEdit(payload: any, gptData: any, token: string) {
   }
 }
 
-async function handleFlag(payload: any, gptData: any) {
-  const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C01ABCXYZ'
+async function handleFlag(payload: any, gptData: any, token: string) {
+  const triggerId = payload.trigger_id
+  if (!triggerId) {
+    console.error('[handleFlag] Missing trigger_id')
+    return
+  }
+
+  await fetch('https://slack.com/api/views.open', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      trigger_id: triggerId,
+      view: {
+        type: 'modal',
+        callback_id: 'flag_reason_modal',
+        private_metadata: JSON.stringify(gptData),
+        title: { type: 'plain_text', text: 'Flag Feedback' },
+        submit: { type: 'plain_text', text: 'Submit' },
+        close: { type: 'plain_text', text: 'Cancel' },
+        blocks: [
+          {
+            type: 'input',
+            block_id: 'reason_block',
+            label: {
+              type: 'plain_text',
+              text: 'Why are you flagging this?'
+            },
+            element: {
+              type: 'plain_text_input',
+              multiline: true,
+              action_id: 'reason_input',
+              placeholder: {
+                type: 'plain_text',
+                text: 'e.g. wrong tag, not relevant, unclear summary...'
+              }
+            }
+          }
+        ]
+      }
+    })
+  })
+}
+
+async function handleFlagSubmission(payload: any, gptData: any, reason: string) {
   const userId = payload.user?.id
+  const channel = payload.channel?.id || payload.container?.channel_id
+  const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C01ABCXYZ'
+
+  const { error } = await supabase.from('flagged_feedback').insert({
+    slack_user_id: userId,
+    slack_channel_id: channel,
+    summary: cleanText(gptData.summary),
+    tag: cleanText(gptData.tag),
+    urgency: cleanText(gptData.urgency),
+    next_step: cleanText(gptData.nextStep),
+    page_id: gptData.pageId || null,
+    reason: cleanText(reason)
+  })
+
+  if (error) {
+    console.error('[Flag Insert Error]', error)
+  }
 
   await postSlackMessage(
     adminChannel,
-    `🚩 <@${userId}> flagged a feedback:\n\n*Summary:* ${gptData.summary}\n*Tag:* ${gptData.tag}\n*Urgency:* ${gptData.urgency}`
+    `🚩 <@${userId}> flagged a feedback with reason:\n>*${reason}*\n\n*Summary:* ${gptData.summary}\n*Tag:* ${gptData.tag}\n*Urgency:* ${gptData.urgency}`
   )
 }
