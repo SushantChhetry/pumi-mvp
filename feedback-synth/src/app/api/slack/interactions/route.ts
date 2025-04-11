@@ -82,44 +82,47 @@ async function postSlackMessage(channel: string, text: string) {
   })
 }
 
+function cleanText(text: string): string {
+  return decodeURIComponent((text || '').replace(/\+/g, ' '))
+}
+
 async function handleConfirm(payload: any, gptData: any) {
-    console.log('[Confirming Feedback]', gptData)
-  
-    try {
-      // Decode if needed
-      const summary = decodeURIComponent(gptData.summary || '')
-      const tag = decodeURIComponent(gptData.tag || 'Other')
-      const urgency = decodeURIComponent(gptData.urgency || 'Medium')
-      const nextStep = decodeURIComponent(gptData.nextStep || '')
-  
-      await notion.pages.create({
-        parent: { database_id: process.env.NOTION_DB_ID! },
-        properties: {
-          Name: {
-            title: [{ text: { content: summary } }]
-          },
-          Tag: {
-            select: { name: tag }
-          },
-          Urgency: {
-            select: { name: urgency }
-          },
-          NextStep: {
-            rich_text: [{ text: { content: nextStep } }]
-          }
+  console.log('[Confirming Feedback]', gptData)
+
+  try {
+    const summary = cleanText(gptData.summary)
+    const tag = cleanText(gptData.tag || 'Other')
+    const urgency = cleanText(gptData.urgency || 'Medium')
+    const nextStep = cleanText(gptData.nextStep)
+
+    await notion.pages.create({
+      parent: { database_id: process.env.NOTION_DB_ID! },
+      properties: {
+        Name: {
+          title: [{ text: { content: summary } }]
+        },
+        Tag: {
+          select: { name: tag }
+        },
+        Urgency: {
+          select: { name: urgency }
+        },
+        NextStep: {
+          rich_text: [{ text: { content: nextStep } }]
         }
-      })
-  
-      const channel = payload.channel?.id || payload.container?.channel_id
-      const userId = payload.user?.id
-      if (channel && userId) {
-        await postSlackMessage(channel, `✅ <@${userId}> Your feedback was saved to Notion!`)
       }
-    } catch (err) {
-      console.error('[Notion Insert Error]', err)
+    })
+
+    const channel = payload.channel?.id || payload.container?.channel_id
+    const userId = payload.user?.id
+    if (channel && userId) {
+      await postSlackMessage(channel, `✅ <@${userId}> Your feedback was saved to Notion!`)
     }
+  } catch (err) {
+    console.error('[Notion Insert Error]', err)
   }
-  
+}
+
 
 async function handleEdit(payload: any, gptData: any) {
   const token = process.env.SLACK_BOT_TOKEN!
