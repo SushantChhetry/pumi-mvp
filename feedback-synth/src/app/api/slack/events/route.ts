@@ -1,66 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Client as NotionClient } from '@notionhq/client'
+import { parseISO, isValid, subDays } from 'date-fns'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// 1) GPT call helper
-async function callGptApi(feedback: string): Promise<string> {
-  try {
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      throw new Error('Missing OPENAI_API_KEY in environment')
-    }
+const notion = new NotionClient({ auth: process.env.NOTION_SECRET! })
 
-    // Build a system-style prompt
-    const prompt = `
-Role: Senior Product Manager
-Task: Parse feedback into:
-1. One-sentence summary
-2. Tag (Bug, Feature, UX)
-3. Urgency (Low/Medium/High)
-4. Suggested next step
-Rules:
-- If "crash", "error", or "broken" => Tag=Bug, Urgency=High
-- Format your answer like:
-Summary: ...
-Tag: ...
-Urgency: ...
-Next Step: ...
-Feedback: "${feedback}"
-`
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo', // or 'gpt-4' if you have access
-        messages: [
-          {
-            role: 'system',
-            content: prompt
-          }
-        ]
-      })
-    })
-
-    const data = await response.json()
-    // Get GPT’s text output
-    return data.choices?.[0]?.message?.content || ''
-  } catch (err) {
-    console.error('[GPT Error]', err)
-    return ''
-  }
+function isQueryIntent(text: string): boolean {
+  const queryTriggers = ['show me', 'list', 'which', 'find', 'what are']
+  return queryTriggers.some((t) => text.toLowerCase().includes(t))
 }
 
-// 2) Extract structured data from GPT response
+function capitalize(str: string) {
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
+}
+
+function isValidISODate(date: string) {
+  return isValid(parseISO(date))
+}
+
+async function callGptApi(text: string, mode: 'parse' | 'query'): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY!
+  const prompt =
+    mode === 'parse'
+      ? `Role: Senior Product Manager\nTask: Parse feedback into:\n1. One-sentence summary\n2. Tag (Bug, Feature, UX)\n3. Urgency (Low/Medium/High)\n4. Suggested next step\nRules:\n- If \"crash\", \"error\", or \"broken\" => Tag=Bug, Urgency=High\nFormat:\nSummary: ...\nTag: ...\nUrgency: ...\nNext Step: ...\nFeedback: \"${text}\"`
+      : `Role: Notion Query Assistant\nTask: Convert natural language into structured Notion filters.\nReturn JSON with:\n- tag\n- urgency\n- flagged\n- date_range { from (ISO), to (ISO) }\nText: \"${text}\"`
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-3.5-turbo',
+      messages: [{ role: 'user', content: prompt }]
+    })
+  })
+
+  const data = await res.json()
+  return data.choices?.[0]?.message?.content || ''
+}
+
 function parseGptOutput(content: string) {
-  // A simple approach with regex. Adjust as needed.
   const summaryMatch = /Summary:\s*(.*)/i.exec(content)
   const tagMatch = /Tag:\s*(.*)/i.exec(content)
   const urgencyMatch = /Urgency:\s*(.*)/i.exec(content)
@@ -74,7 +60,6 @@ function parseGptOutput(content: string) {
   }
 }
 
-// 3) Build Slack blocks to display the parsed data
 interface ParsedFeedback {
   summary: string;
   tag: string;
@@ -96,29 +81,20 @@ function buildSlackBlocks(parsed: ParsedFeedback) {
       elements: [
         {
           type: 'button',
-          text: {
-            type: 'plain_text',
-            text: '✅ Confirm'
-          },
+          text: { type: 'plain_text', text: '✅ Confirm' },
           style: 'primary',
-          value: JSON.stringify(parsed), // pass parsed GPT data
+          value: JSON.stringify(parsed),
           action_id: 'confirm_feedback'
         },
         {
           type: 'button',
-          text: {
-            type: 'plain_text',
-            text: '✏️ Edit'
-          },
+          text: { type: 'plain_text', text: '✏️ Edit' },
           value: JSON.stringify(parsed),
           action_id: 'edit_feedback'
         },
         {
           type: 'button',
-          text: {
-            type: 'plain_text',
-            text: '🚩 Flag'
-          },
+          text: { type: 'plain_text', text: '🚩 Flag' },
           style: 'danger',
           value: JSON.stringify(parsed),
           action_id: 'flag_feedback'
@@ -128,109 +104,149 @@ function buildSlackBlocks(parsed: ParsedFeedback) {
   ]
 }
 
-
-// 4) Post to Slack with blocks
-async function sendSlackMessage(channel: string, blocks: SlackBlock[], token: string, fallbackText: string) {
-  if (!token) {
-    console.error('No Slack Bot Token found for this workspace.')
-    return
+function formatQueryResults(pages: any[], filters?: any): any[] {
+  if (!pages.length) {
+    return [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: 'No matching feedback found.' }
+      }
+    ]
   }
 
-  const res = await fetch('https://slack.com/api/chat.postMessage', {
+  const blocks = pages.map((p) => ({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `• *${p.properties.Name?.title?.[0]?.text?.content || 'Untitled'}*\nTag: ${p.properties.Tag?.select?.name} | Urgency: ${p.properties.Urgency?.select?.name}`
+    }
+  }))
+
+  if (filters?.__debug) {
+    blocks.push({
+  type: 'context',
+  elements: [
+    {
+      type: 'mrkdwn',
+      text: `\`Filters: ${JSON.stringify(filters)}\``
+    }
+  ]
+})
+    blocks.push({
+  type: 'context',
+  elements: [
+    {
+      type: 'mrkdwn',
+      text: `\`Results: ${pages.length} entries\``
+    }
+  ]
+})
+  }
+
+  return blocks
+}
+
+async function queryNotion(filters: any) {
+  const CREATED_PROPERTY = 'Created'; // fallback default
+
+  // Try to validate created property exists first
+  try {
+    const dbMeta = await notion.databases.retrieve({ database_id: process.env.NOTION_DB_ID! })
+    const validKeys = Object.keys(dbMeta.properties)
+    if (!validKeys.includes(CREATED_PROPERTY)) {
+      const fallback = validKeys.find(key => dbMeta.properties[key].type === 'created_time')
+      if (fallback) {
+        CREATED_PROPERTY = fallback
+        console.warn(`[Notion] Falling back to created_time field: "${CREATED_PROPERTY}"`)
+      } else {
+        console.warn(`[Notion] No created_time field found. Available properties:`, validKeys)
+      }
+    }
+  } catch (metaErr) {
+    console.error('[Notion] Failed to retrieve database metadata', metaErr)
+  }
+  const filterConditions = []
+  if (filters.tag) filterConditions.push({ property: 'Tag', select: { equals: capitalize(filters.tag) } })
+  if (filters.urgency) filterConditions.push({ property: 'Urgency', select: { equals: capitalize(filters.urgency) } })
+
+  if (filters.date_range) {
+    const { from, to } = filters.date_range
+    if (isValidISODate(from) && isValidISODate(to)) {
+      filterConditions.push({
+        property: 'Created',
+        date: { on_or_after: from, on_or_before: to }
+      })
+    } else {
+      console.warn('[Invalid Date Range]', filters.date_range)
+    }
+  }
+
+  const response = await notion.databases.query({
+    database_id: process.env.NOTION_DB_ID!,
+    filter: filterConditions.length ? { and: filterConditions } : undefined
+  })
+
+  return response.results
+}
+
+async function sendSlackMessage(channel: string, blocks: any[], token: string, fallbackText: string) {
+  if (!token) return
+  await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      channel,
-      text: fallbackText, // fallback text if blocks can’t be displayed
-      blocks
-    })
+    body: JSON.stringify({ channel, text: fallbackText, blocks })
   })
-
-  const data = await res.json()
-  if (!data.ok) {
-    console.error('Slack API error:', data.error)
-  }
-}
-
-// Define the SlackBlock interface
-interface SlackBlock {
-  type: string;
-  text?: {
-    type: string;
-    text: string;
-  };
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-
-  // 1. Slack URL verification handshake
   if (body.type === 'url_verification') {
     return NextResponse.json({ challenge: body.challenge })
   }
 
   const event = body.event
-
-  // 2. Only process non-bot user messages
   if (event?.type === 'message' && !event.bot_id) {
     const { user, text, channel, ts } = event
-    const teamId = body.team_id // Slack includes team_id at top level
+    const teamId = body.team_id
 
-    console.log(`[Slack Message] (team=${teamId} channel=${channel}) [${user}] ${text} @ ${ts}`)
-
-    // (A) Insert raw message into Supabase
-    const { error: insertError } = await supabase.from('slack_messages').insert({
+    await supabase.from('slack_messages').insert({
       slack_user_id: user,
       slack_channel_id: channel,
       text,
       message_ts: ts,
       team_id: teamId
     })
-    if (insertError) {
-      console.error('[Supabase Insert Error]', insertError)
-    }
 
-    // (B) Fetch the workspace record to get access_token & bot_user_id
-    const { data: teamData, error: teamError } = await supabase
+    const { data: teamData } = await supabase
       .from('slack_teams')
       .select('access_token, bot_user_id')
       .eq('team_id', teamId)
       .single()
 
-    if (teamError || !teamData) {
-      console.error('[Supabase Fetch Team Error]', teamError)
-      return NextResponse.json({ ok: true })
-    }
+    const { access_token, bot_user_id } = teamData || {}
+    if (!access_token || !bot_user_id) return NextResponse.json({ ok: true })
 
-    const { access_token, bot_user_id } = teamData
+    if (text.includes(`<@${bot_user_id}>`)) {
+      const trimmedText = text.replace(`<@${bot_user_id}>`, '').trim()
+      const debug = trimmedText.toLowerCase().includes('--debug')
+      const cleanText = trimmedText.replace('--debug', '').trim()
 
-    // (C) Check if this text includes the bot’s user ID => user is mentioning the bot
-    if (bot_user_id && text.includes(`<@${bot_user_id}>`)) {
-      // --- MAIN GPT LOGIC ---
-
-      // 1) Call GPT with the raw feedback (the entire text, minus the mention)
-      //    or just the entire text, GPT can handle extra words.
-      const gptRawOutput = await callGptApi(text)
-
-      if (!gptRawOutput) {
-        // If GPT fails, let user know
-        await sendSlackMessage(channel, [], access_token, `⚠️ PuMi is busy. Try again later.`)
-        return NextResponse.json({ ok: true })
+      if (isQueryIntent(cleanText)) {
+        const gptResponse = await callGptApi(cleanText, 'query')
+        const filters = JSON.parse(gptResponse)
+        if (debug) filters.__debug = true
+        const results = await queryNotion(filters)
+        const blocks = formatQueryResults(results, filters)
+        await sendSlackMessage(channel, blocks, access_token, `Results for: ${cleanText}`)
+      } else {
+        const gptResponse = await callGptApi(cleanText, 'parse')
+        const parsed = parseGptOutput(gptResponse)
+        const blocks = buildSlackBlocks(parsed)
+        await sendSlackMessage(channel, blocks, access_token, `Feedback Summary: ${parsed.summary}`)
       }
-
-      // 2) Parse GPT’s output
-      const parsed = parseGptOutput(gptRawOutput)
-      console.log('[GPT Parsed]', parsed)
-
-      // 3) Construct Slack blocks
-      const blocks = buildSlackBlocks(parsed)
-
-      // 4) Send a structured message back to Slack
-      const fallbackText = `Feedback Summary: ${parsed.summary}`
-      await sendSlackMessage(channel, blocks, access_token, fallbackText)
     }
   }
 

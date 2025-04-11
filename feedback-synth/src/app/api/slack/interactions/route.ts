@@ -93,7 +93,7 @@ function secureCompare(a: string, b: string) {
   return result === 0
 }
 
-async function postSlackMessage(channel: string, text: string) {
+async function postSlackMessage(channel: string, text: string, blocks?: any[]) {
   const token = process.env.SLACK_BOT_TOKEN!
   await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
@@ -101,7 +101,7 @@ async function postSlackMessage(channel: string, text: string) {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ channel, text })
+    body: JSON.stringify({ channel, text, blocks })
   })
 }
 
@@ -123,36 +123,20 @@ async function handleConfirm(payload: any, gptData: any) {
       await notion.pages.update({
         page_id: pageId,
         properties: {
-          Name: {
-            title: [{ text: { content: summary } }]
-          },
-          Tag: {
-            select: { name: tag }
-          },
-          Urgency: {
-            select: { name: urgency }
-          },
-          NextStep: {
-            rich_text: [{ text: { content: nextStep } }]
-          }
+          Name: { title: [{ text: { content: summary } }] },
+          Tag: { select: { name: tag } },
+          Urgency: { select: { name: urgency } },
+          NextStep: { rich_text: [{ text: { content: nextStep } }] }
         }
       })
     } else {
       await notion.pages.create({
         parent: { database_id: process.env.NOTION_DB_ID! },
         properties: {
-          Name: {
-            title: [{ text: { content: summary } }]
-          },
-          Tag: {
-            select: { name: tag }
-          },
-          Urgency: {
-            select: { name: urgency }
-          },
-          NextStep: {
-            rich_text: [{ text: { content: nextStep } }]
-          }
+          Name: { title: [{ text: { content: summary } }] },
+          Tag: { select: { name: tag } },
+          Urgency: { select: { name: urgency } },
+          NextStep: { rich_text: [{ text: { content: nextStep } }] }
         }
       })
     }
@@ -165,6 +149,51 @@ async function handleConfirm(payload: any, gptData: any) {
   } catch (err) {
     console.error('[Notion Insert/Update Error]', err)
   }
+}
+
+async function handleFlagSubmission(payload: any, gptData: any, reason: string) {
+  const userId = payload.user?.id
+  const channel = payload.channel?.id || payload.container?.channel_id
+  const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C01ABCXYZ'
+
+  const { error } = await supabase.from('flagged_feedback').insert({
+    slack_user_id: userId,
+    slack_channel_id: channel,
+    summary: gptData.summary,
+    tag: gptData.tag,
+    urgency: gptData.urgency,
+    next_step: gptData.nextStep,
+    page_id: gptData.pageId || null,
+    reason
+  })
+
+  if (error) console.error('[Flag Insert Error]', error)
+
+  await postSlackMessage(adminChannel, `🚩 <@${userId}> flagged feedback with reason:
+>*${reason}*
+
+*Summary:* ${gptData.summary}
+*Tag:* ${gptData.tag}
+*Urgency:* ${gptData.urgency}`,
+  [
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '✅ Regenerate' },
+          action_id: 'regenerate_feedback',
+          value: JSON.stringify(gptData)
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '❌ Ignore' },
+          action_id: 'ignore_feedback',
+          value: JSON.stringify({})
+        }
+      ]
+    }
+  ])
 }
 
 async function handleEdit(payload: any, gptData: any, token: string) {
@@ -287,48 +316,16 @@ async function handleFlag(payload: any, gptData: any, token: string) {
           {
             type: 'input',
             block_id: 'reason_block',
-            label: {
-              type: 'plain_text',
-              text: 'Why are you flagging this?'
-            },
+            label: { type: 'plain_text', text: 'Why are you flagging this?' },
             element: {
               type: 'plain_text_input',
               multiline: true,
               action_id: 'reason_input',
-              placeholder: {
-                type: 'plain_text',
-                text: 'e.g. wrong tag, not relevant, unclear summary...'
-              }
+              placeholder: { type: 'plain_text', text: 'e.g. wrong tag, not relevant, unclear summary...' }
             }
           }
         ]
       }
     })
   })
-}
-
-async function handleFlagSubmission(payload: any, gptData: any, reason: string) {
-  const userId = payload.user?.id
-  const channel = payload.channel?.id || payload.container?.channel_id
-  const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C01ABCXYZ'
-
-  const { error } = await supabase.from('flagged_feedback').insert({
-    slack_user_id: userId,
-    slack_channel_id: channel,
-    summary: cleanText(gptData.summary),
-    tag: cleanText(gptData.tag),
-    urgency: cleanText(gptData.urgency),
-    next_step: cleanText(gptData.nextStep),
-    page_id: gptData.pageId || null,
-    reason: cleanText(reason)
-  })
-
-  if (error) {
-    console.error('[Flag Insert Error]', error)
-  }
-
-  await postSlackMessage(
-    adminChannel,
-    `🚩 <@${userId}> flagged a feedback with reason:\n>*${reason}*\n\n*Summary:* ${gptData.summary}\n*Tag:* ${gptData.tag}\n*Urgency:* ${gptData.urgency}`
-  )
 }
