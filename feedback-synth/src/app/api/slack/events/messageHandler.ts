@@ -10,12 +10,15 @@ export class MessageHandler {
   private readonly notion: NotionService
   private readonly slackMessages: SlackMessages
   private readonly slackUserId: string
+  
 
   constructor(
     private readonly text: string,
     private readonly channel: string,
     private readonly accessToken: string,
-    private readonly userId: string
+    private readonly userId: string,
+    private readonly intent: 'feedback' | 'query'
+    
   ) {
     this.openAI = new OpenAIService(process.env.OPENAI_API_KEY!)
     this.notion = new NotionService()
@@ -24,15 +27,14 @@ export class MessageHandler {
   }
 
   async handle() {
-    const isQuery = Formatters.isQueryIntent(this.text)
     logger.info('Routing message based on intent', {
-        text: this.text,
-        isQuery
-      })
-    
-    return isQuery 
-      ? this.handleQuery()
-      : this.handleFeedback()
+      text: this.text,
+      intent: this.intent
+    })
+
+    return this.intent === 'query'
+    ? this.handleQuery()
+    : this.handleFeedback()
   }
 
   private async handleQuery() {

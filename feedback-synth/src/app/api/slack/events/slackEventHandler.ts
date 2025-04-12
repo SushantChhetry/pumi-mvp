@@ -40,6 +40,13 @@ export class SlackEventHandler {
            !!this.event.text
   }
 
+  private stripCommandPrefix(intent: 'feedback' | 'query', botUserId: string): string {
+    const mention = `<@${botUserId}>`
+    const prefix = `${mention} ${intent}:`
+    const originalText = this.event?.text ?? ''
+    return originalText.replace(prefix, '').trim()
+  }
+
   private async storeMessage() {
     try {
       logger.info('Storing message in Supabase', {
@@ -67,24 +74,28 @@ export class SlackEventHandler {
   private async handleMessageEvent() {
     try {
       logger.info('Fetching Slack team access token from Supabase')
-
+  
       const teamData = await this.supabase.getSlackTeamData(this.teamId || '')
       if (!teamData?.access_token || !teamData?.bot_user_id) {
         throw new AppError('Missing Slack team credentials')
       }
+  
+      const intent = this.parseCommandIntent(teamData.bot_user_id)
 
-      if (!this.isBotMentioned(teamData.bot_user_id)) {
-        logger.info('Bot not mentioned in message. Skipping response.')
-
+      if (!intent) {
+        logger.info('Message is not a valid PuMi command. Skipping response.')
         return this.defaultResponse()
       }
-      logger.info('Bot is mentioned. Passing message to handler.')
+  
+      logger.info(`Recognized PuMi command intent: ${intent}`)
 
+  
       return new MessageHandler(
-        this.event?.text ?? '',
+        this.stripCommandPrefix(intent, teamData.bot_user_id),
         this.event?.channel ?? '',
         teamData.access_token,
-        this.event?.user ?? ''
+        this.event?.user ?? '',
+        intent
       ).handle()
     } catch (error) {
       logger.error('Message handling failed', {
@@ -97,10 +108,20 @@ export class SlackEventHandler {
       )
     }
   }
+  
 
-  private isBotMentioned(botUserId: string) {
-    return this.event?.text?.includes(`<@${botUserId}>`) ?? false
+  private parseCommandIntent(botUserId: string): 'feedback' | 'query' | undefined {
+    const mention = `<@${botUserId}>`
+    const text = this.event?.text?.trim().toLowerCase() ?? ''
+  
+    if (text.startsWith(`${mention} feedback:`)) {
+      return 'feedback'
+    } else if (text.startsWith(`${mention} query:`)) {
+      return 'query'
+    }
+    return undefined
   }
+  
 
   private defaultResponse() {
     return NextResponse.json({ ok: true })

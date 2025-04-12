@@ -32,13 +32,17 @@ export async function GET() {
   const scopes = [
     'channels:read',
     'channels:history',
+    'channels:manage',
     'chat:write',
     'groups:read',
     'groups:history',
+    'groups:write',
     'im:read',
+    'im:write',
     'mpim:read',
+    'mpim:write',
     'users:read',
-    'users.profile:read'
+    'users.profile:read',    
   ].join(',')
 
   const slackInstallUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${redirectUri}`
