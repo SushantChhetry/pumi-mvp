@@ -9,11 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@langchain/openai": "^0.5.5",
     "@notionhq/client": "^2.3.0",
     "@slack/web-api": "^7.9.1",
     "@supabase/supabase-js": "^2.49.4",
     "date-fns": "^4.1.0",
+    "langchain": "^0.3.21",
     "next": "15.2.4",
+    "openai": "^4.93.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -27,6 +30,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
     "tailwindcss": "^4",
+    "tsx": "^4.19.3",
     "typescript": "^5"
   }
 }
