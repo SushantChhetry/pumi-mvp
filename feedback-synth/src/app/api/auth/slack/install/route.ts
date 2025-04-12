@@ -42,7 +42,8 @@ export async function GET() {
     'mpim:read',
     'mpim:write',
     'users:read',
-    'users.profile:read',    
+    'users.profile:read',   
+    'commands', 
   ].join(',')
 
   const slackInstallUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${redirectUri}`
