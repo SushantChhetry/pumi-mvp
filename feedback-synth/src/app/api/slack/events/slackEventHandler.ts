@@ -1,4 +1,3 @@
-// src/app/api/slack/events/slackEventHandler.ts
 import { SlackEventBody } from '@/lib/types'
 import { SupabaseService } from '@/lib/database/supabaseClient'
 import { MessageHandler } from './messageHandler'
@@ -18,20 +17,64 @@ export class SlackEventHandler {
     this.teamId = body.team_id
   }
 
+  private async getPumiHubChannelId(accessToken: string): Promise<string | null> {
+    try {
+      const res = await fetch('https://slack.com/api/conversations.list', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` }
+      })
+      const data = await res.json()
+      return data.channels?.find((c: any) => c.name === 'pumi-hub')?.id ?? null
+    } catch (err) {
+      logger.error('[Slack] Failed to fetch channel list', 
+        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err })
+      return null
+    }
+  }
+
   async processEvent() {
-    
     logger.info('Processing Slack message event', {
-    user: this.event?.user,
-    channel: this.event?.channel,
-    text: this.event?.text
-  })
+      user: this.event?.user,
+      channel: this.event?.channel,
+      text: this.event?.text
+    })
+
     if (!this.isValidMessageEvent()) {
       logger.info('Ignoring non-message event or bot message')
       return this.defaultResponse()
     }
 
     await this.storeMessage()
-    return this.handleMessageEvent()
+
+    const teamData = await this.supabase.getSlackTeamData(this.teamId || '')
+    if (!teamData?.access_token) {
+      logger.error('Missing Slack team access token')
+      return this.defaultResponse()
+    }
+
+    const hubChannelId = await this.getPumiHubChannelId(teamData.access_token)
+    const isInHub = this.event?.channel === hubChannelId
+    const text = this.event?.text?.trim().toLowerCase() ?? ''
+
+    // ✅ Feedback or bug sent in #pumi-hub → goes to internal pumi_feedback table
+    if (isInHub && (text.startsWith('bug:') || text.startsWith('feedback:'))) {
+      const intent: 'feedback' | 'bug' = text.startsWith('bug:') ? 'bug' : 'feedback'
+      const message = this.event.text!.split(':').slice(1).join(':').trim()
+
+      logger.info(`[Slack] Handling ${intent} command in #pumi-hub`, { message })
+
+      return new MessageHandler(
+        message,
+        this.event.channel ?? '',
+        teamData.access_token,
+        this.event.user ?? '',
+        intent,
+        'pumi' // 👈 PuMi's own feedback bucket
+      ).handle()
+    }
+
+    // 🧠 Bot was mentioned outside hub channel → handle company feedback/query
+    return this.handleMessageEvent(teamData)
   }
 
   private isValidMessageEvent() {
@@ -40,12 +83,17 @@ export class SlackEventHandler {
            !!this.event.text
   }
 
-  private stripCommandPrefix(intent: 'feedback' | 'query', botUserId: string): string {
-    const mention = `<@${botUserId}>`
+  private stripCommandPrefix(
+    intent: 'feedback' | 'query' | 'bug',
+    botUserId: string
+  ): string {
+    const mention = `<@${botUserId.toLowerCase()}>`
+    const text = this.event?.text?.replace(/\s+/g, ' ').toLowerCase() ?? ''
     const prefix = `${mention} ${intent}:`
-    const originalText = this.event?.text ?? ''
-    return originalText.replace(prefix, '').trim()
+    return text.replace(prefix, '').trim()
   }
+  
+  
 
   private async storeMessage() {
     try {
@@ -71,31 +119,25 @@ export class SlackEventHandler {
     }
   }
 
-  private async handleMessageEvent() {
+  private async handleMessageEvent(teamData: { access_token: string, bot_user_id: string }) {
     try {
-      logger.info('Fetching Slack team access token from Supabase')
-  
-      const teamData = await this.supabase.getSlackTeamData(this.teamId || '')
-      if (!teamData?.access_token || !teamData?.bot_user_id) {
-        throw new AppError('Missing Slack team credentials')
-      }
-  
       const intent = this.parseCommandIntent(teamData.bot_user_id)
+      logger.info(`Processing Slack message event with intent: ${intent}`)
 
       if (!intent) {
         logger.info('Message is not a valid PuMi command. Skipping response.')
         return this.defaultResponse()
       }
-  
+
       logger.info(`Recognized PuMi command intent: ${intent}`)
 
-  
       return new MessageHandler(
         this.stripCommandPrefix(intent, teamData.bot_user_id),
         this.event?.channel ?? '',
         teamData.access_token,
         this.event?.user ?? '',
-        intent
+        intent,
+        'customer' // 👈 company-specific feedback storage
       ).handle()
     } catch (error) {
       logger.error('Message handling failed', {
@@ -108,17 +150,25 @@ export class SlackEventHandler {
       )
     }
   }
-  
 
-  private parseCommandIntent(botUserId: string): 'feedback' | 'query' | undefined {
-    const mention = `<@${botUserId}>`
-    const text = this.event?.text?.trim().toLowerCase() ?? ''
+  private parseCommandIntent(botUserId: string): 'feedback' | 'query' | 'bug' | undefined {
+    const mention = `<@${botUserId.toLowerCase()}>`
+    const text = this.event?.text?.trim().toLowerCase().replace(/\s+/g, ' ') ?? ''
+  
+    logger.info('Parsing command intent', { mention, text })
   
     if (text.startsWith(`${mention} feedback:`)) {
+      logger.info('Detected feedback intent')
       return 'feedback'
     } else if (text.startsWith(`${mention} query:`)) {
+      logger.info('Detected query intent')
       return 'query'
+    } else if (text.startsWith(`${mention} bug:`)) {
+      logger.info('Detected bug intent')
+      return 'bug'
     }
+  
+    logger.info('No valid intent detected')
     return undefined
   }
   

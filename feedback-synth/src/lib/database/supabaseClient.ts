@@ -31,6 +31,20 @@ export class SupabaseService {
     logger.info('Supabase client initialized')
   }
 
+  async saveToPumiFeedback(entry: {
+    type: 'bug' | 'feedback',
+    summary: string,
+    details: string,
+    user_id: string,
+    channel_id: string,
+    metadata?: Record<string, any>
+  }) {
+    return await this.client.from('pumi_feedback').insert({
+      ...entry,
+      created_at: new Date().toISOString()
+    })
+  }
+
   /**
    * Stores a Slack message in the database
    */
