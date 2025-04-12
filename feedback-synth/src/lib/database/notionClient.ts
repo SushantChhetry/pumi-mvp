@@ -3,6 +3,14 @@ import { logger } from '../utils/logger'
 import { NotionError } from '../errors'
 import { config } from '../config'
 import { Validators } from '../utils/validators'
+import { ParsedFeedback } from '../types'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // Service role key required for inserts from the backend
+)
+
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
 export class NotionService {
@@ -30,7 +38,7 @@ export class NotionService {
       throw new NotionError('Failed to query Notion database', { originalError: error })
     }
   }
-  async createFeedbackTask(parsed: ParsedFeedback) {
+  async createFeedbackTask(parsed: ParsedFeedback, options?: { source?: string; metadata?: any }) {
     try {
       const response = await this.client.pages.create({
         parent: {
@@ -67,6 +75,23 @@ export class NotionService {
           }
         }
       })
+      const { error } = await supabase.from('feedback_tasks').insert({
+        external_id: response.id,
+        summary: parsed.summary,
+        tag: parsed.tag,
+        urgency: parsed.urgency,
+        next_step: parsed.nextStep,
+        source: options?.source || 'Slack',
+        destination: 'Notion',
+        metadata: options?.metadata || {}
+      })
+
+      if (error) {
+        logger.error('Failed to store feedback task in Supabase', { error })
+      } else {
+        logger.info('Stored feedback task in Supabase')
+      }
+
   
       logger.info('Feedback task created in Notion', { pageId: response.id })
       return response

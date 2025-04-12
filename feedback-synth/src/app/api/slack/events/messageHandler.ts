@@ -9,15 +9,18 @@ export class MessageHandler {
   private readonly openAI: OpenAIService
   private readonly notion: NotionService
   private readonly slackMessages: SlackMessages
+  private readonly slackUserId: string
 
   constructor(
     private readonly text: string,
     private readonly channel: string,
-    private readonly accessToken: string
+    private readonly accessToken: string,
+    private readonly userId: string
   ) {
     this.openAI = new OpenAIService(process.env.OPENAI_API_KEY!)
     this.notion = new NotionService()
     this.slackMessages = new SlackMessages()
+    this.slackUserId = userId
   }
 
   async handle() {
@@ -71,36 +74,38 @@ export class MessageHandler {
     const parsed = Formatters.parseFeedback(gptResponse)
     logger.info('Parsed feedback from GPT response', { parsed })
 
-    const notionPage = await this.notion.createFeedbackTask(parsed)
+    const notionPage = await this.notion.createFeedbackTask(parsed, {
+      source: 'Slack',
+      metadata: {
+        channel: this.channel,
+        text: this.text,
+        user: this.slackUserId
+      }
+    })
     const notionUrl = notionPage?.url
+    logger.info('Formatting feedback blocks for Slack message', { parsed })
 
     const blocks = Formatters.formatFeedbackBlocks(parsed)
     if (notionUrl) {
+      logger.info('Adding Notion URL to Slack message blocks', { notionUrl })
       blocks.push({
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: `🔗 <${notionUrl}|View in Notion>`
-          }
-        ]
+      type: 'context',
+      elements: [
+        {
+        type: 'mrkdwn',
+        text: `🔗 <${notionUrl}|View in Notion>`
+        }
+      ]
       })
     }
-  
-
-    try {
-      await this.notion.createFeedbackTask(parsed)
-    } catch (error) {
-      logger.error('Notion task creation failed', { error })
-      // Optionally send an alternate Slack message
-    }
-
+    
+    logger.info('Sending feedback message to Slack', { channel: this.channel })
     const slackRes = await this.slackMessages.send({
       channel: this.channel,
       blocks,
       token: this.accessToken
     })
-  
+    logger.info('Slack message sent successfully', { slackRes })
     return NextResponse.json({ ok: true, slackRes })
   }
 

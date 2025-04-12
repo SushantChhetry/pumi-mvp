@@ -83,7 +83,8 @@ export class SlackEventHandler {
       return new MessageHandler(
         this.event?.text ?? '',
         this.event?.channel ?? '',
-        teamData.access_token
+        teamData.access_token,
+        this.event?.user ?? ''
       ).handle()
     } catch (error) {
       logger.error('Message handling failed', {
