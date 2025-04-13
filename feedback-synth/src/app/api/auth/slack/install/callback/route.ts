@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logger } from '@/lib/utils/logger'
+import { encrypt } from '@/lib/utils/crypto'
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
@@ -44,6 +45,8 @@ export async function GET(req: NextRequest) {
     }
 
     const { access_token, team, bot_user_id, authed_user } = tokenData
+    const encryptedToken = encrypt(access_token)
+
     const teamId = team?.id
     const teamName = team?.name
 
@@ -58,7 +61,7 @@ export async function GET(req: NextRequest) {
       {
         team_id: teamId,
         team_name: teamName,
-        access_token,
+        access_token: encryptedToken,
         bot_user_id
       },
       { onConflict: 'team_id' }
