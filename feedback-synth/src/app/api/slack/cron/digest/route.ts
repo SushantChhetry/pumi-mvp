@@ -8,7 +8,7 @@ import { summarizeText } from '@/lib/ai/summarize'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
 export async function GET() {
@@ -28,7 +28,7 @@ export async function GET() {
       channel_id: channelId,
       summary,
       raw_text: formatted,
-      message_count: messages.length
+      message_count: messages.length,
     })
 
     if (error) {
@@ -40,7 +40,7 @@ export async function GET() {
   } catch (err) {
     logger.error(
       '[DigestCron] Unexpected error',
-      err instanceof Error ? { message: err.message, stack: err.stack } : { error: err }
+      err instanceof Error ? { message: err.message, stack: err.stack } : { error: err },
     )
     return NextResponse.json({ ok: false, error: 'Unexpected error' }, { status: 500 })
   }

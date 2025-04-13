@@ -1,8 +1,9 @@
-// src/app/api/auth/slack/install/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logger } from '@/lib/utils/logger'
 import { encrypt } from '@/lib/utils/crypto'
+import { createNotionDatabase, seedExampleTasks } from '@/lib/notion/createNotionDatabase'
+import { supabaseClient } from '@/lib/database/supabaseClient'
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
 
   try {
@@ -33,8 +34,8 @@ export async function GET(req: NextRequest) {
         code,
         client_id: process.env.SLACK_CLIENT_ID!,
         client_secret: process.env.SLACK_CLIENT_SECRET!,
-        redirect_uri: process.env.SLACK_REDIRECT_URI!
-      })
+        redirect_uri: process.env.SLACK_REDIRECT_URI!,
+      }),
     })
 
     const tokenData = await tokenRes.json()
@@ -55,7 +56,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/?error=missing_oauth_data`)
     }
 
-    // === Create or reuse #pumi-hub channel BEFORE upserting ===
     const channelName = 'pumi-hub'
     logger.info(`[Slack] Creating channel: ${channelName}`)
 
@@ -63,9 +63,9 @@ export async function GET(req: NextRequest) {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${access_token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ name: channelName, is_private: false })
+      body: JSON.stringify({ name: channelName, is_private: false }),
     })
 
     const createChannelData = await createChannelRes.json()
@@ -77,10 +77,10 @@ export async function GET(req: NextRequest) {
 
         const listRes = await fetch('https://slack.com/api/conversations.list', {
           method: 'GET',
-          headers: { Authorization: `Bearer ${access_token}` }
+          headers: { Authorization: `Bearer ${access_token}` },
         })
         const listData = await listRes.json()
-        type SlackChannel = { id: string; name: string };
+        type SlackChannel = { id: string; name: string }
         channelId = listData.channels?.find((c: SlackChannel) => c.name === channelName)?.id
       } else {
         logger.error('[Channel Creation Error]', createChannelData)
@@ -89,8 +89,32 @@ export async function GET(req: NextRequest) {
       logger.info(`[Slack] Channel ${channelName} created successfully`)
     }
 
-    // === Now safe to use channelId in your upsert ===
     logger.info(`[Slack OAuth] Successfully authenticated team: ${teamName} (${teamId})`)
+
+    // Check if Notion DB already exists
+    const { data: existingDb } = await supabase
+      .from('notion_databases')
+      .select('notion_db_id')
+      .eq('team_id', teamId)
+      .single()
+
+    let notionDbId = existingDb?.notion_db_id
+
+    if (!notionDbId) {
+      try {
+        notionDbId = await createNotionDatabase(teamName)
+        logger.info('[Notion] Created Notion DB', { notionDbId })
+
+        await supabaseClient.linkNotionDatabase(teamId, teamName, notionDbId)
+
+        await seedExampleTasks(notionDbId)
+        logger.info('[Notion] Seeded example tasks')
+      } catch (err) {
+        logger.error('[Callback] Failed during Notion DB setup', {
+          err: err instanceof Error ? err.message : err,
+        })
+      }
+    }
 
     const { error: upsertTeamError } = await supabase.from('slack_teams').upsert(
       {
@@ -98,9 +122,9 @@ export async function GET(req: NextRequest) {
         team_name: teamName,
         access_token: encryptedToken,
         bot_user_id,
-        channel_id: channelId
+        channel_id: channelId,
       },
-      { onConflict: 'team_id' }
+      { onConflict: 'team_id' },
     )
 
     if (upsertTeamError) {
@@ -110,7 +134,6 @@ export async function GET(req: NextRequest) {
 
     logger.info(`[Database] Team ${teamName} (${teamId}) upserted successfully`)
 
-    // Get user info
     const userId = authed_user?.id
     let realName = 'pumi'
 
@@ -118,7 +141,7 @@ export async function GET(req: NextRequest) {
       const userInfoRes = await fetch('https://slack.com/api/users.info', {
         method: 'GET',
         headers: { Authorization: `Bearer ${access_token}` },
-        next: { revalidate: 0 }
+        next: { revalidate: 0 },
       })
 
       const userInfo = await userInfoRes.json()
@@ -128,25 +151,23 @@ export async function GET(req: NextRequest) {
         {
           id: userId,
           name: realName,
-          team_id: teamId
+          team_id: teamId,
         },
-        { onConflict: 'id' }
+        { onConflict: 'id' },
       )
 
       logger.info(`[Database] User ${realName} (${userId}) upserted successfully`)
     }
 
-    // Invite user to the channel (optional)
     if (channelId && userId) {
       logger.info(`[Slack] Inviting user ${userId} to channel ${channelId}`)
       await fetch('https://slack.com/api/conversations.invite', {
         method: 'POST',
         headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: channelId, users: userId })
+        body: JSON.stringify({ channel: channelId, users: userId }),
       })
     }
 
-    // Post onboarding message
     if (channelId) {
       logger.info(`[Slack] Posting onboarding message to channel ${channelId}`)
       await fetch('https://slack.com/api/chat.postMessage', {
@@ -160,30 +181,31 @@ export async function GET(req: NextRequest) {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '*👋 Welcome to PuMi!* Your product feedback assistant is ready to go.'
-              }
+                text: '*👋 Welcome to PuMi!* Your product feedback assistant is ready to go.',
+              },
             },
             {
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '1. Try `/summary` to get a report of recent feedback\n' +
-                      '2. Mention `@PuMi-MVP` and send feedback using `feedback:`\n' +
-                      '3. Use `query:` to explore issues and trends\n\n' +
-                      '_Need help? Just reply in this channel._'
-              }
-            }
-          ]
-        })
+                text:
+                  '1. Try `/summary` to get a report of recent feedback\n' +
+                  '2. Mention `@PuMi-MVP` and send feedback using `feedback:`\n' +
+                  '3. Use `query:` to explore issues and trends\n\n' +
+                  '_Need help? Just reply in this channel._',
+              },
+            },
+          ],
+        }),
       })
     }
 
     logger.info(`[Slack Bot Installed] Team: ${teamName} (${teamId})`)
     return NextResponse.redirect(`${baseUrl}/messages`)
   } catch (err) {
-    logger.error('[OAuth Callback Error]', err instanceof Error
-      ? { message: err.message, stack: err.stack }
-      : { error: err }
+    logger.error(
+      '[OAuth Callback Error]',
+      err instanceof Error ? { message: err.message, stack: err.stack } : { error: err },
     )
     return NextResponse.redirect(`${baseUrl}/?error=unexpected_error`)
   }

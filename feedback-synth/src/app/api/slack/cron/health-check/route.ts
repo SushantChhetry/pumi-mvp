@@ -5,13 +5,11 @@ import { decrypt } from '@/lib/utils/crypto'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
 export async function GET() {
-  const { data: teams, error } = await supabaseAdmin
-    .from('slack_teams')
-    .select('*')
+  const { data: teams, error } = await supabaseAdmin.from('slack_teams').select('*')
 
   if (error) {
     logger.error('Failed to fetch teams for health check', { error })
@@ -26,8 +24,8 @@ export async function GET() {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${decryptedToken}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
       })
 
       const result = await response.json()
@@ -42,7 +40,8 @@ export async function GET() {
           .eq('team_id', team.team_id)
 
         // Post to pumi-hub if we have the channel ID
-        const reinstallUrl = process.env.SLACK_INSTALL_URL || 'https://your-domain.com/api/auth/slack/install'
+        const reinstallUrl =
+          process.env.SLACK_INSTALL_URL || 'https://your-domain.com/api/auth/slack/install'
 
         if (team.channel_id) {
           const reinstallMessage = `⚠️ *Heads up!* Your PuMi bot token is no longer valid. Please reinstall the app to restore full functionality: ${reinstallUrl}`
@@ -51,12 +50,12 @@ export async function GET() {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${decryptedToken}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               channel: team.channel_id,
-              text: reinstallMessage
-            })
+              text: reinstallMessage,
+            }),
           })
 
           const dmData = await dmRes.json()
@@ -66,7 +65,9 @@ export async function GET() {
             logger.info(`Reinstall notice sent to #pumi-hub for team ${team.team_name}`)
           }
         } else {
-          logger.warn(`No channel_id found for team ${team.team_name}, skipping pumi-hub notification`)
+          logger.warn(
+            `No channel_id found for team ${team.team_name}, skipping pumi-hub notification`,
+          )
         }
       } else {
         logger.info(`✅ Team ${team.team_name} token is valid`)

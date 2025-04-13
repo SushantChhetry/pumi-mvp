@@ -3,7 +3,7 @@ import { OpenAIEmbeddings } from '@langchain/openai'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 const embeddings = new OpenAIEmbeddings({ modelName: 'text-embedding-3-small' })
 
@@ -12,7 +12,7 @@ export async function matchRelevantDocs(query: string) {
 
   const { data, error } = await supabase.rpc('match_notion_docs', {
     query_embedding: queryEmbedding,
-    match_count: 3
+    match_count: 3,
   })
 
   if (error) throw new Error(`Vector search failed: ${error.message}`)

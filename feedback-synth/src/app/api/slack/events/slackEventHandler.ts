@@ -12,7 +12,7 @@ export class SlackEventHandler {
 
   constructor(
     private readonly body: SlackEventBody,
-    private readonly supabase: SupabaseService
+    private readonly supabase: SupabaseService,
   ) {
     this.event = body.event
     this.teamId = body.team_id
@@ -22,17 +22,19 @@ export class SlackEventHandler {
     try {
       const res = await fetch('https://slack.com/api/conversations.list', {
         method: 'GET',
-        headers: { Authorization: `Bearer ${decryptedToken}` }
+        headers: { Authorization: `Bearer ${decryptedToken}` },
       })
       const data = await res.json()
       interface SlackChannel {
-        id: string;
-        name: string;
+        id: string
+        name: string
       }
       return data.channels?.find((c: SlackChannel) => c.name === 'pumi-hub')?.id ?? null
     } catch (err) {
-      logger.error('[Slack] Failed to fetch channel list',
-        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err })
+      logger.error(
+        '[Slack] Failed to fetch channel list',
+        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err },
+      )
       return null
     }
   }
@@ -41,7 +43,7 @@ export class SlackEventHandler {
     logger.info('Processing Slack message event', {
       user: this.event?.user,
       channel: this.event?.channel,
-      text: this.event?.text
+      text: this.event?.text,
     })
 
     if (!this.isValidMessageEvent()) {
@@ -63,8 +65,10 @@ export class SlackEventHandler {
     const isInHub = this.event?.channel === hubChannelId
     const text = this.event?.text?.trim().toLowerCase() ?? ''
 
-    // ✅ Feedback or bug sent in #pumi-hub → goes to internal pumi_feedback table
-    if (isInHub && (text.startsWith('bug:') || text.startsWith('feedback:'))) {
+    const rawText = this.event?.text?.trim().toLowerCase() ?? ''
+    const cleanedText = rawText.replace(/^<@[^>]+>\s*/, '') // remove bot mention if present
+
+    if (isInHub && (cleanedText.startsWith('bug:') || cleanedText.startsWith('feedback:'))) {
       const intent: 'feedback' | 'bug' = text.startsWith('bug:') ? 'bug' : 'feedback'
       const message = this.event.text!.split(':').slice(1).join(':').trim()
 
@@ -76,27 +80,23 @@ export class SlackEventHandler {
         decryptedToken,
         this.event.user ?? '',
         intent,
-        'pumi' // 👈 PuMi's own feedback bucket
+        'pumi',
+        this.teamId || hubChannelId 
       ).handle()
     }
 
     // 🧠 Bot was mentioned outside hub channel → handle company feedback/query
     return this.handleMessageEvent({
       access_token: decryptedToken,
-      bot_user_id: teamData.bot_user_id
+      bot_user_id: teamData.bot_user_id,
     })
   }
 
   private isValidMessageEvent() {
-    return this.event?.type === 'message' &&
-           !this.event.bot_id &&
-           !!this.event.text
+    return this.event?.type === 'message' && !this.event.bot_id && !!this.event.text
   }
 
-  private stripCommandPrefix(
-    intent: 'feedback' | 'query' | 'bug',
-    botUserId: string
-  ): string {
+  private stripCommandPrefix(intent: 'feedback' | 'query' | 'bug', botUserId: string): string {
     const mention = `<@${botUserId.toLowerCase()}>`
     const text = this.event?.text?.replace(/\s+/g, ' ').toLowerCase() ?? ''
     const prefix = `${mention} ${intent}:`
@@ -109,7 +109,7 @@ export class SlackEventHandler {
         user: this.event?.user,
         channel: this.event?.channel,
         text: this.event?.text,
-        ts: this.event?.ts
+        ts: this.event?.ts,
       })
       if (!this.event?.user || !this.event.text || !this.event.channel || !this.event.ts) {
         throw new AppError('Missing required message fields')
@@ -120,14 +120,14 @@ export class SlackEventHandler {
         slack_channel_id: this.event.channel,
         text: this.event.text,
         message_ts: this.event.ts,
-        team_id: this.teamId || 'unknown'
+        team_id: this.teamId || 'unknown',
       })
     } catch (error) {
       logger.error('Failed to store message', { error })
     }
   }
 
-  private async handleMessageEvent(teamData: { access_token: string, bot_user_id: string }) {
+  private async handleMessageEvent(teamData: { access_token: string; bot_user_id: string }) {
     try {
       const intent = this.parseCommandIntent(teamData.bot_user_id)
       logger.info(`Processing Slack message event with intent: ${intent}`)
@@ -145,17 +145,15 @@ export class SlackEventHandler {
         teamData.access_token,
         this.event?.user ?? '',
         intent,
-        'customer' // 👈 company-specific feedback storage
+        'customer', 
+        this.teamId || ''
       ).handle()
     } catch (error) {
       logger.error('Message handling failed', {
         error: error instanceof Error ? error.message : error,
-        stack: error instanceof Error ? error.stack : null
+        stack: error instanceof Error ? error.stack : null,
       })
-      return NextResponse.json(
-        { error: 'Failed to process message' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Failed to process message' }, { status: 500 })
     }
   }
 

@@ -16,17 +16,17 @@ export class SlackEventProcessor {
   async handleEvent() {
     try {
       logger.info('Handling Slack event', { eventType: this.body.type })
-  
+
       if (this.body.type === 'url_verification') {
         logger.info('Responding to Slack URL verification')
         return NextResponse.json({ challenge: this.body.challenge })
       }
-  
+
       if (this.body.event?.type !== 'message' || this.body.event?.bot_id) {
         logger.info('Ignoring non-message event or bot message')
         return NextResponse.json({ ok: true })
       }
-  
+
       const handler = new SlackEventHandler(this.body, this.supabase)
       return await handler.processEvent()
     } catch (error) {
@@ -34,5 +34,4 @@ export class SlackEventProcessor {
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
-  
 }

@@ -3,10 +3,12 @@ import crypto from 'crypto'
 import { Client as NotionClient } from '@notionhq/client'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/utils/crypto'
+import { createNotionDatabase } from '@/lib/notion/createNotionDatabase'
+import { logger } from '@/lib/utils/logger'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
 const notion = new NotionClient({ auth: process.env.NOTION_SECRET })
@@ -16,10 +18,9 @@ export async function POST(request: NextRequest) {
   const timestamp = request.headers.get('x-slack-request-timestamp')!
   const rawBody = await request.text()
   const sigBaseString = `v0:${timestamp}:${rawBody}`
-  const mySignature = 'v0=' + crypto
-    .createHmac('sha256', slackSigningSecret)
-    .update(sigBaseString, 'utf8')
-    .digest('hex')
+  const mySignature =
+    'v0=' +
+    crypto.createHmac('sha256', slackSigningSecret).update(sigBaseString, 'utf8').digest('hex')
   const slackSignature = request.headers.get('x-slack-signature')!
 
   if (!secureCompare(mySignature, slackSignature)) {
@@ -96,15 +97,17 @@ function secureCompare(a: string, b: string) {
   return result === 0
 }
 
-async function postSlackMessage(channel: string, text: string, blocks?: any[]) {
+import { Block } from '@slack/types'
+
+async function postSlackMessage(channel: string, text: string, blocks?: Block[]) {
   const token = process.env.SLACK_BOT_TOKEN!
   await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ channel, text, blocks })
+    body: JSON.stringify({ channel, text, blocks }),
   })
 }
 
@@ -129,18 +132,39 @@ async function handleConfirm(payload: any, gptData: any) {
           Name: { title: [{ text: { content: summary } }] },
           Tag: { select: { name: tag } },
           Urgency: { select: { name: urgency } },
-          NextStep: { rich_text: [{ text: { content: nextStep } }] }
-        }
+          NextStep: { rich_text: [{ text: { content: nextStep } }] },
+        },
       })
     } else {
+      const teamId = payload.team?.id || payload.team_id
+      let notionDbId: string | null = null
+
+      const { data: notionDb, error: dbError } = await supabase
+        .from('notion_databases')
+        .select('notion_db_id')
+        .eq('team_id', teamId)
+        .single()
+
+      if (!notionDb || dbError) {
+        logger.info(`[Notion DB Missing] Creating new Notion DB for team: ${teamId}`)
+        notionDbId = await createNotionDatabase(`Workspace ${teamId}`)
+
+        await supabase.from('notion_databases').upsert({
+          team_id: teamId,
+          notion_db_id: notionDbId,
+        })
+      } else {
+        notionDbId = notionDb.notion_db_id
+      }
+
       await notion.pages.create({
-        parent: { database_id: process.env.NOTION_DB_ID! },
+        parent: { database_id: notionDbId! },
         properties: {
           Name: { title: [{ text: { content: summary } }] },
           Tag: { select: { name: tag } },
           Urgency: { select: { name: urgency } },
-          NextStep: { rich_text: [{ text: { content: nextStep } }] }
-        }
+          NextStep: { rich_text: [{ text: { content: nextStep } }] },
+        },
       })
     }
 
@@ -153,7 +177,6 @@ async function handleConfirm(payload: any, gptData: any) {
     console.error('[Notion Insert/Update Error]', err)
   }
 }
-
 async function handleFlagSubmission(payload: any, gptData: any, reason: string) {
   const userId = payload.user?.id
   const channel = payload.channel?.id || payload.container?.channel_id
@@ -167,36 +190,39 @@ async function handleFlagSubmission(payload: any, gptData: any, reason: string) 
     urgency: gptData.urgency,
     next_step: gptData.nextStep,
     page_id: gptData.pageId || null,
-    reason
+    reason,
   })
 
   if (error) console.error('[Flag Insert Error]', error)
 
-  await postSlackMessage(adminChannel, `🚩 <@${userId}> flagged feedback with reason:
+  await postSlackMessage(
+    adminChannel,
+    `🚩 <@${userId}> flagged feedback with reason:
 >*${reason}*
 
 *Summary:* ${gptData.summary}
 *Tag:* ${gptData.tag}
 *Urgency:* ${gptData.urgency}`,
-  [
-    {
-      type: 'actions',
-      elements: [
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: '✅ Regenerate' },
-          action_id: 'regenerate_feedback',
-          value: JSON.stringify(gptData)
-        },
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: '❌ Ignore' },
-          action_id: 'ignore_feedback',
-          value: JSON.stringify({})
-        }
-      ]
-    }
-  ])
+    [
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '✅ Regenerate' },
+            action_id: 'regenerate_feedback',
+            value: JSON.stringify(gptData),
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '❌ Ignore' },
+            action_id: 'ignore_feedback',
+            value: JSON.stringify({}),
+          },
+        ],
+      },
+    ],
+  )
 }
 
 async function handleEdit(payload: any, gptData: any, token: string) {
@@ -212,7 +238,7 @@ async function handleEdit(payload: any, gptData: any, token: string) {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       trigger_id: triggerId,
@@ -228,9 +254,9 @@ async function handleEdit(payload: any, gptData: any, token: string) {
             element: {
               type: 'plain_text_input',
               action_id: 'summary_input',
-              initial_value: cleanText(gptData.summary || '')
+              initial_value: cleanText(gptData.summary || ''),
             },
-            label: { type: 'plain_text', text: 'Summary' }
+            label: { type: 'plain_text', text: 'Summary' },
           },
           {
             type: 'input',
@@ -241,15 +267,15 @@ async function handleEdit(payload: any, gptData: any, token: string) {
               action_id: 'tag_input',
               initial_option: {
                 text: { type: 'plain_text', text: cleanText(gptData.tag || 'Feature') },
-                value: cleanText(gptData.tag || 'Feature')
+                value: cleanText(gptData.tag || 'Feature'),
               },
               options: [
                 { text: { type: 'plain_text', text: 'Bug' }, value: 'Bug' },
                 { text: { type: 'plain_text', text: 'Feature' }, value: 'Feature' },
                 { text: { type: 'plain_text', text: 'UX' }, value: 'UX' },
-                { text: { type: 'plain_text', text: 'Other' }, value: 'Other' }
-              ]
-            }
+                { text: { type: 'plain_text', text: 'Other' }, value: 'Other' },
+              ],
+            },
           },
           {
             type: 'input',
@@ -260,14 +286,14 @@ async function handleEdit(payload: any, gptData: any, token: string) {
               action_id: 'urgency_input',
               initial_option: {
                 text: { type: 'plain_text', text: cleanText(gptData.urgency || 'Medium') },
-                value: cleanText(gptData.urgency || 'Medium')
+                value: cleanText(gptData.urgency || 'Medium'),
               },
               options: [
                 { text: { type: 'plain_text', text: 'Low' }, value: 'Low' },
                 { text: { type: 'plain_text', text: 'Medium' }, value: 'Medium' },
-                { text: { type: 'plain_text', text: 'High' }, value: 'High' }
-              ]
-            }
+                { text: { type: 'plain_text', text: 'High' }, value: 'High' },
+              ],
+            },
           },
           {
             type: 'input',
@@ -275,14 +301,14 @@ async function handleEdit(payload: any, gptData: any, token: string) {
             element: {
               type: 'plain_text_input',
               action_id: 'next_step_input',
-              initial_value: cleanText(gptData.nextStep || '')
+              initial_value: cleanText(gptData.nextStep || ''),
             },
-            label: { type: 'plain_text', text: 'Next Step' }
-          }
+            label: { type: 'plain_text', text: 'Next Step' },
+          },
         ],
-        submit: { type: 'plain_text', text: 'Save' }
-      }
-    })
+        submit: { type: 'plain_text', text: 'Save' },
+      },
+    }),
   })
 
   const data = await res.json()
@@ -304,7 +330,7 @@ async function handleFlag(payload: any, gptData: any, token: string) {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       trigger_id: triggerId,
@@ -324,11 +350,14 @@ async function handleFlag(payload: any, gptData: any, token: string) {
               type: 'plain_text_input',
               multiline: true,
               action_id: 'reason_input',
-              placeholder: { type: 'plain_text', text: 'e.g. wrong tag, not relevant, unclear summary...' }
-            }
-          }
-        ]
-      }
-    })
+              placeholder: {
+                type: 'plain_text',
+                text: 'e.g. wrong tag, not relevant, unclear summary...',
+              },
+            },
+          },
+        ],
+      },
+    }),
   })
 }

@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { decrypt } from '@/lib/utils/crypto' 
+import { decrypt } from '@/lib/utils/crypto'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
 export async function GET() {
@@ -27,7 +27,10 @@ export async function GET() {
   }
 
   // 2. Combine messages
-  const combinedText = messages.map((m) => m.text).join('\n').trim()
+  const combinedText = messages
+    .map(m => m.text)
+    .join('\n')
+    .trim()
 
   if (combinedText.length < 20) {
     return NextResponse.json({ message: 'Not enough content to summarize meaningfully.' })
@@ -39,7 +42,7 @@ export async function GET() {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model: 'gpt-4', // or 'gpt-3.5-turbo'
@@ -47,14 +50,14 @@ export async function GET() {
           {
             role: 'system',
             content:
-              'You are a product feedback synthesizer. Create a clear, concise summary of themes, suggestions, or concerns from the Slack feedback below. If too short, say: "Not enough messages to summarize."'
+              'You are a product feedback synthesizer. Create a clear, concise summary of themes, suggestions, or concerns from the Slack feedback below. If too short, say: "Not enough messages to summarize."',
           },
           {
             role: 'user',
-            content: `Here are Slack messages collected over the past month:\n\n${combinedText}`
-          }
-        ]
-      })
+            content: `Here are Slack messages collected over the past month:\n\n${combinedText}`,
+          },
+        ],
+      }),
     })
 
     const openaiData = await openaiRes.json()
@@ -95,12 +98,12 @@ export async function GET() {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${decryptedToken}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             channel: channelId,
-            text: `🧠 *Monthly Feedback Summary:*\n\n${summary}`
-          })
+            text: `🧠 *Monthly Feedback Summary:*\n\n${summary}`,
+          }),
         })
 
         const postData = await postRes.json()

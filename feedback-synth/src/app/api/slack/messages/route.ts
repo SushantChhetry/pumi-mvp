@@ -13,7 +13,7 @@ export async function GET() {
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
 
   // 1. Get stored (encrypted) bot token from Supabase
@@ -33,7 +33,7 @@ export async function GET() {
     // 2. Get channel ID of #user-feedback
     logger.info('[Slack API] Fetching list of conversations...')
     const listRes = await fetch('https://slack.com/api/conversations.list', {
-      headers: { Authorization: `Bearer ${decryptedToken}` }
+      headers: { Authorization: `Bearer ${decryptedToken}` },
     })
 
     const listData = await listRes.json()
@@ -42,10 +42,13 @@ export async function GET() {
       return NextResponse.json({ error: listData.error }, { status: 500 })
     }
 
-    logger.info('[Slack API] Channels found:', listData.channels.map((ch: SlackChannel) => ch.name))
+    logger.info(
+      '[Slack API] Channels found:',
+      listData.channels.map((ch: SlackChannel) => ch.name),
+    )
 
     const feedbackChannel = (listData.channels as SlackChannel[]).find(
-      (ch) => ch.name === 'user-feedback'
+      ch => ch.name === 'user-feedback',
     )
 
     if (!feedbackChannel) {
@@ -53,13 +56,15 @@ export async function GET() {
       return NextResponse.json({ error: 'Channel not found' }, { status: 404 })
     }
 
-    logger.info('[Slack API] Found channel ID for #user-feedback:', { channelId: feedbackChannel.id })
+    logger.info('[Slack API] Found channel ID for #user-feedback:', {
+      channelId: feedbackChannel.id,
+    })
 
     // 3. Fetch channel messages
     logger.info('[Slack API] Fetching messages from channel...')
     const historyRes = await fetch(
       `https://slack.com/api/conversations.history?channel=${feedbackChannel.id}`,
-      { headers: { Authorization: `Bearer ${decryptedToken}` } }
+      { headers: { Authorization: `Bearer ${decryptedToken}` } },
     )
 
     const historyData = await historyRes.json()
@@ -67,16 +72,22 @@ export async function GET() {
 
     if (historyData.error === 'not_in_channel') {
       console.warn('[Slack API] Bot is not in the channel.')
-      return NextResponse.json({
-        error: 'Bot is not a member of the channel. Use /invite @YourBotName in Slack.'
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: 'Bot is not a member of the channel. Use /invite @YourBotName in Slack.',
+        },
+        { status: 400 },
+      )
     }
 
     if (historyData.error === 'missing_scope') {
       console.warn('[Slack API] Bot is missing required scope: channels:history.')
-      return NextResponse.json({
-        error: 'Missing channels:history scope. Reinstall the app after adding the scope.'
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: 'Missing channels:history scope. Reinstall the app after adding the scope.',
+        },
+        { status: 400 },
+      )
     }
 
     if (!historyData.ok) {

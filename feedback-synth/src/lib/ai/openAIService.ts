@@ -24,18 +24,18 @@ export class OpenAIService {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           model: config.openai.model,
           temperature: config.openai.temperature,
-          messages: [getSystemPrompt(mode), { role: 'user', content: text }]
-        })
+          messages: [getSystemPrompt(mode), { role: 'user', content: text }],
+        }),
       })
 
       if (!response.ok) {
         throw new OpenAIError(`API request failed: ${response.statusText}`, {
-          status: response.status
+          status: response.status,
         })
       }
 

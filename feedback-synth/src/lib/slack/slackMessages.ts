@@ -16,13 +16,13 @@ export class SlackMessages {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${payload.token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           channel: payload.channel,
           text: payload.text || 'New message',
-          blocks: payload.blocks
-        })
+          blocks: payload.blocks,
+        }),
       })
 
       if (!response.ok) {

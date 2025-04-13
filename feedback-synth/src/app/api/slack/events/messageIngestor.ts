@@ -5,7 +5,7 @@ import { logger } from '@/lib/utils/logger'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
 export async function POST(req: NextRequest) {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       channel_id: channel,
       is_edited: !!edited,
       raw_blocks: blocks,
-      captured_at: new Date().toISOString()
+      captured_at: new Date().toISOString(),
     })
 
     if (error) {
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (err) {
     logger.error('[Slack Ingest] Error processing message', {
-      error: err instanceof Error ? err.message : err
+      error: err instanceof Error ? err.message : err,
     })
     return NextResponse.json({ ok: false }, { status: 500 })
   }

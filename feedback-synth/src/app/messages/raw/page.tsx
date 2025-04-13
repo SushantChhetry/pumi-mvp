@@ -63,8 +63,8 @@ export default function RawMessagesPage() {
     }
   }, [days])
 
-  const filteredMessages = messages.filter((msg) =>
-    msg.text.toLowerCase().includes(search.toLowerCase())
+  const filteredMessages = messages.filter(msg =>
+    msg.text.toLowerCase().includes(search.toLowerCase()),
   )
 
   const handleSummarize = async () => {
@@ -82,7 +82,7 @@ export default function RawMessagesPage() {
           Show messages from last:
           <select
             value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
+            onChange={e => setDays(Number(e.target.value))}
             style={{ marginLeft: '0.5rem' }}
           >
             <option value={7}>7 days</option>
@@ -95,7 +95,7 @@ export default function RawMessagesPage() {
           type="text"
           placeholder="Search by keyword..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={e => setSearch(e.target.value)}
           style={{ marginLeft: '1rem', padding: '4px' }}
         />
 
@@ -117,16 +117,19 @@ export default function RawMessagesPage() {
 
       <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
         {Object.entries(
-          filteredMessages.reduce((acc, msg) => {
-            acc[msg.slack_channel_id] ||= []
-            acc[msg.slack_channel_id].push(msg)
-            return acc
-          }, {} as Record<string, SlackMessage[]>)
+          filteredMessages.reduce(
+            (acc, msg) => {
+              acc[msg.slack_channel_id] ||= []
+              acc[msg.slack_channel_id].push(msg)
+              return acc
+            },
+            {} as Record<string, SlackMessage[]>,
+          ),
         ).map(([channelId, group]) => (
           <li key={channelId} style={{ marginBottom: '2rem' }}>
             <h3 style={{ marginBottom: '0.5rem' }}>Channel: {channelId}</h3>
             <ul>
-              {group.map((msg) => (
+              {group.map(msg => (
                 <li key={msg.id} style={{ marginBottom: '1rem' }}>
                   <strong>@{usernames[msg.slack_user_id] || msg.slack_user_id}</strong> @{' '}
                   {new Date(msg.created_at).toLocaleString()}

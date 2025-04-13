@@ -5,7 +5,7 @@ import { logger } from '@/lib/utils/logger'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
 export async function GET() {
@@ -20,12 +20,14 @@ export async function GET() {
 
   const encryptedToken = teams[0].access_token
   const decryptedToken = decrypt(encryptedToken)
-  logger.info('[Sync Users] Decrypted token and preparing to call Slack API', { team: teams[0].team_name })
+  logger.info('[Sync Users] Decrypted token and preparing to call Slack API', {
+    team: teams[0].team_name,
+  })
 
   const slackRes = await fetch('https://slack.com/api/users.list', {
     headers: {
-      Authorization: `Bearer ${decryptedToken}`
-    }
+      Authorization: `Bearer ${decryptedToken}`,
+    },
   })
 
   const slackData = await slackRes.json()
@@ -36,17 +38,17 @@ export async function GET() {
   }
 
   interface SlackUser {
-    id: string;
+    id: string
     profile: {
-      display_name?: string;
-    };
-    real_name?: string;
-    name: string;
+      display_name?: string
+    }
+    real_name?: string
+    name: string
   }
 
   const upserts = slackData.members.map((user: SlackUser) => ({
     id: user.id,
-    name: user.profile.display_name || user.real_name || user.name
+    name: user.profile.display_name || user.real_name || user.name,
   }))
 
   logger.info(`[Sync Users] Preparing to upsert ${upserts.length} users into Supabase...`)

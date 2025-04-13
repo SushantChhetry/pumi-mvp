@@ -5,21 +5,20 @@ import { ChatOpenAI } from '@langchain/openai' // Updated import
 import { PromptTemplate } from '@langchain/core/prompts' // Updated import
 import { SupabaseVectorStore } from '@langchain/community/vectorstores/supabase'
 
-
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
-const embeddings = new OpenAIEmbeddings({ 
+const embeddings = new OpenAIEmbeddings({
   modelName: 'text-embedding-3-small',
-  openAIApiKey: process.env.OPENAI_API_KEY // Ensure this is set
+  openAIApiKey: process.env.OPENAI_API_KEY, // Ensure this is set
 })
 
-const llm = new ChatOpenAI({ 
+const llm = new ChatOpenAI({
   modelName: 'gpt-4',
   temperature: 0,
-  openAIApiKey: process.env.OPENAI_API_KEY // Ensure this is set
+  openAIApiKey: process.env.OPENAI_API_KEY, // Ensure this is set
 })
 
 const template = `You are a helpful assistant for the PuMi Slack bot. Use the context below to answer the user's question. If the answer cannot be found in the context, say "I'm not sure, but we'll get back to you.".
@@ -45,14 +44,11 @@ export async function getHelpAnswer(question: string): Promise<string> {
     }
 
     // Embed and search Notion-based vector store
-    const vectorStore = await SupabaseVectorStore.fromExistingIndex(
-      embeddings,
-      {
-        client: supabase,
-        tableName: 'notion_help_docs',
-        queryName: 'match_notion_docs'
-      }
-    )
+    const vectorStore = await SupabaseVectorStore.fromExistingIndex(embeddings, {
+      client: supabase,
+      tableName: 'notion_help_docs',
+      queryName: 'match_notion_docs',
+    })
 
     const results = await vectorStore.similaritySearch(question, 4)
     const context = results.map(r => r.pageContent).join('\n\n')
@@ -63,7 +59,7 @@ export async function getHelpAnswer(question: string): Promise<string> {
     // Cache response
     await supabase.from('pumi_help_cache').insert({
       question,
-      answer: response.content
+      answer: response.content,
     })
 
     return response.content.toString()

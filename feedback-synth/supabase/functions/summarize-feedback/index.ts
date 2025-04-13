@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Initialize
 const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -7,7 +7,7 @@ const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 if (!supabaseUrl || !supabaseKey) throw new Error('Missing Supabase credentials')
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-serve(async (_req) => {
+serve(async _req => {
   try {
     // Fetch recent messages
     const { data: messages, error } = await supabase
@@ -21,18 +21,18 @@ serve(async (_req) => {
     // const summary = await summarize(messages.map(m => m.text))
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
         message_count: messages.length,
-        // summary 
+        // summary
       }),
-      { headers: { 'Content-Type': 'application/json' } }
+      { headers: { 'Content-Type': 'application/json' } },
     )
   } catch (err) {
     console.error('Error:', err)
-    return new Response(JSON.stringify({ error: err.message }), { 
+    return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     })
   }
 })

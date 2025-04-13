@@ -1,9 +1,4 @@
-import {
-  ParsedFeedback,
-  NotionFilter,
-  FeedbackTag,
-  UrgencyLevel
-} from '../types'
+import { ParsedFeedback, NotionFilter, FeedbackTag, UrgencyLevel } from '../types'
 import { QUERY_TRIGGERS } from '../config'
 import { Validators } from './validators'
 import { logger } from './logger'
@@ -21,7 +16,7 @@ export interface NotionPage {
 
 export class Formatters {
   static isQueryIntent(text: string): boolean {
-    return QUERY_TRIGGERS.some((t) => text.toLowerCase().includes(t))
+    return QUERY_TRIGGERS.some(t => text.toLowerCase().includes(t))
   }
 
   static formatFeedbackBlocks(parsed: ParsedFeedback) {
@@ -30,26 +25,26 @@ export class Formatters {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Summary:* ${parsed.summary}`
-        }
+          text: `*Summary:* ${parsed.summary}`,
+        },
       },
       {
         type: 'context',
         elements: [
           {
             type: 'mrkdwn',
-            text: `*Tag:* ${parsed.tag} | *Urgency:* ${parsed.urgency} | *Next Step:* ${parsed.nextStep}`
-          }
-        ]
+            text: `*Tag:* ${parsed.tag} | *Urgency:* ${parsed.urgency} | *Next Step:* ${parsed.nextStep}`,
+          },
+        ],
       },
-      { type: 'divider' }
+      { type: 'divider' },
     ]
   }
 
   static formatQueryResults(pages: NotionPage[], filters?: NotionFilter) {
     logger.info('Formatting query results for Slack', {
       resultCount: pages.length,
-      filters
+      filters,
     })
 
     if (pages.length === 0) {
@@ -58,9 +53,9 @@ export class Formatters {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `:mag: No results found for the given filters.`
-          }
-        }
+            text: `:mag: No results found for the given filters.`,
+          },
+        },
       ]
     }
 
@@ -78,9 +73,9 @@ export class Formatters {
     const blocks: any[] = [
       {
         type: 'section',
-        text: { type: 'mrkdwn', text: `:clipboard: ${headerText}` }
+        text: { type: 'mrkdwn', text: `:clipboard: ${headerText}` },
       },
-      { type: 'divider' }
+      { type: 'divider' },
     ]
 
     for (const page of pages) {
@@ -94,8 +89,7 @@ export class Formatters {
 
       // Fallback order: Summary.rich_text > dynamic title field
       const titleProp = Object.values(props).find(
-        (p: any): p is NotionProperty =>
-          p?.type === 'title' && Array.isArray(p.title)
+        (p: any): p is NotionProperty => p?.type === 'title' && Array.isArray(p.title),
       )
 
       const summary =
@@ -110,8 +104,8 @@ export class Formatters {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${summary}*\n• *Tag:* ${tag}\n• *Urgency:* ${urgency}`
-        }
+          text: `*${summary}*\n• *Tag:* ${tag}\n• *Urgency:* ${urgency}`,
+        },
       })
 
       blocks.push({ type: 'divider' })
@@ -142,9 +136,7 @@ export class Formatters {
       typeof urgency !== 'string' ||
       typeof nextStep !== 'string'
     ) {
-      throw new Error(
-        'Parsed feedback is missing required fields or contains invalid types.'
-      )
+      throw new Error('Parsed feedback is missing required fields or contains invalid types.')
     }
 
     if (!Validators.isValidFeedbackTag(tag)) {
@@ -159,7 +151,7 @@ export class Formatters {
       summary: summary.trim(),
       tag: tag as FeedbackTag,
       urgency: urgency as UrgencyLevel,
-      nextStep: nextStep.trim()
+      nextStep: nextStep.trim(),
     }
   }
 }

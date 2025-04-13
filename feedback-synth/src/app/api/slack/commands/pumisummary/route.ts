@@ -10,11 +10,14 @@ export async function POST(req: NextRequest) {
   // Init Supabase
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
 
   // 1. Respond immediately (Slack requires <3s)
-  const ackResponse = NextResponse.json({ response_type: 'ephemeral', text: 'Generating summary...' })
+  const ackResponse = NextResponse.json({
+    response_type: 'ephemeral',
+    text: 'Generating summary...',
+  })
 
   // 2. Fetch summary (async)
   const { data: latest } = await supabase
@@ -32,8 +35,8 @@ export async function POST(req: NextRequest) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       response_type: 'in_channel', // visible to others
-      text: `🧠 *Latest Feedback Summary:*\n\n${summary}`
-    })
+      text: `🧠 *Latest Feedback Summary:*\n\n${summary}`,
+    }),
   })
 
   return ackResponse

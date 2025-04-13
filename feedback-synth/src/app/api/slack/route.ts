@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { encrypt } from '@/lib/utils/crypto' 
+import { encrypt } from '@/lib/utils/crypto'
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
 
   if (!code) {
@@ -22,8 +22,8 @@ export async function GET(req: NextRequest) {
       code,
       client_id: process.env.SLACK_CLIENT_ID!,
       client_secret: process.env.SLACK_CLIENT_SECRET!,
-      redirect_uri: process.env.SLACK_REDIRECT_URI!
-    }).toString()
+      redirect_uri: process.env.SLACK_REDIRECT_URI!,
+    }).toString(),
   })
 
   const data = await res.json()
@@ -47,9 +47,9 @@ export async function GET(req: NextRequest) {
       team_id: team.id,
       team_name: team.name,
       bot_user_id,
-      access_token: encryptedToken
+      access_token: encryptedToken,
     },
-    { onConflict: 'team_id' }
+    { onConflict: 'team_id' },
   )
 
   if (error) {

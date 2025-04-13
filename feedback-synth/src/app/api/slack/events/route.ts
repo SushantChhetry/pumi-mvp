@@ -1,50 +1,31 @@
 // src/app/api/slack/events/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/utils/logger'
-import { createClient } from '@supabase/supabase-js'
+import { SlackEventHandler } from './slackEventHandler'
+import { SupabaseService } from '@/lib/database/supabaseClient'
 
-const supabaseAdmin = createClient(
+const supabase = new SupabaseService(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
-
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    logger.info('[Slack] Received a new request')
 
-    // Handle Slack URL verification challenge
+    const body = await req.json()
+    logger.info('[Slack] Parsed request body', { body })
+
     if (body.type === 'url_verification') {
+      logger.info('[Slack] URL verification challenge received', { challenge: body.challenge })
       return NextResponse.json({ challenge: body.challenge })
     }
 
-    const event = body.event
-
-    if (event && event.type === 'message' && !event.bot_id) {
-      const { user, text, ts, channel } = event
-
-      logger.info('[Slack] New message received', { user, text, ts, channel })
-
-      const { error } = await supabaseAdmin.from('user_feedback_messages').insert({
-        slack_user_id: user,
-        slack_channel_id: channel,
-        text,
-        message_ts: ts,
-        raw_event: event
-      })
-
-      if (error) {
-        logger.error('[Supabase] Failed to store Slack message', { error })
-      }
-    }
-
-    return NextResponse.json({ ok: true })
+    const handler = new SlackEventHandler(body, supabase)
+    return await handler.processEvent()
   } catch (error) {
-    logger.error('Failed to process Slack event', { error })
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    logger.error('[Slack] Event handling failed', { error })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

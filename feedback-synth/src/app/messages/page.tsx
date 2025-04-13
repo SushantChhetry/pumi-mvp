@@ -1,46 +1,46 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react'
 
 interface SlackMessage {
-  id?: string;
-  text: string;
+  id?: string
+  text: string
 }
 
 interface FetchMessagesResponse {
-  messages: SlackMessage[];
-  error?: string;
+  messages: SlackMessage[]
+  error?: string
 }
 
 export default function SlackMessagesPage() {
-  const [messages, setMessages] = useState<SlackMessage[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<SlackMessage[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchMessages() {
       try {
-        const res = await fetch('/api/slack/messages');
-        const data: FetchMessagesResponse = await res.json();
+        const res = await fetch('/api/slack/messages')
+        const data: FetchMessagesResponse = await res.json()
 
         if (!res.ok) {
-          throw new Error(data.error || 'Failed to fetch messages.');
+          throw new Error(data.error || 'Failed to fetch messages.')
         }
 
-        setMessages(data.messages);
+        setMessages(data.messages)
       } catch (err: unknown) {
         if (err instanceof Error) {
-          setError(err.message);
+          setError(err.message)
         } else {
-          setError('An unknown error occurred.');
+          setError('An unknown error occurred.')
         }
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
     }
 
-    fetchMessages();
-  }, []);
+    fetchMessages()
+  }, [])
 
   return (
     <div style={{ padding: '2rem' }}>
@@ -54,5 +54,5 @@ export default function SlackMessagesPage() {
         ))}
       </ul>
     </div>
-  );
+  )
 }

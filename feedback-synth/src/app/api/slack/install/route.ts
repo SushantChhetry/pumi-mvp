@@ -1,7 +1,5 @@
-
-
 /**
- * 
+ *
  * File path: src/app/api/auth/slack/install/route.ts
  *
  * Handles the Slack OAuth installation process by redirecting the user to the Slack authorization URL.
@@ -38,7 +36,7 @@ export async function GET(req: NextRequest) {
     'im:read',
     'mpim:read',
     'users:read',
-    'users.profile:read'
+    'users.profile:read',
   ].join(',')
 
   const slackInstallUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${redirectUri}`

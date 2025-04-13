@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Service role key required for inserts from the backend
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // Service role key required for inserts from the backend
 )
 
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -25,10 +25,10 @@ export class NotionService {
   async queryDatabase(filters: any) {
     try {
       logger.info('Querying Notion database', { filters })
-      
+
       const response = await this.client.databases.query({
         database_id: this.dbId,
-        filter: this.buildFilters(filters)
+        filter: this.buildFilters(filters),
       })
       logger.info('Notion returned pages', { count: response.results.length })
 
@@ -38,42 +38,46 @@ export class NotionService {
       throw new NotionError('Failed to query Notion database', { originalError: error })
     }
   }
-  async createFeedbackTask(parsed: ParsedFeedback, options?: { source?: string; metadata?: any }) {
+  async createFeedbackTask(
+    parsed: ParsedFeedback,
+    options?: { source?: string; metadata?: any; databaseId?: string },
+  ) {
     try {
+      const dbId = options?.databaseId || this.dbId
       const response = await this.client.pages.create({
         parent: {
-          database_id: this.dbId
+          database_id: dbId,
         },
         properties: {
           Name: {
             title: [
               {
                 text: {
-                  content: parsed.summary
-                }
-              }
-            ]
+                  content: parsed.summary,
+                },
+              },
+            ],
           },
           Tag: {
             select: {
-              name: parsed.tag
-            }
+              name: parsed.tag,
+            },
           },
           Urgency: {
             select: {
-              name: parsed.urgency
-            }
+              name: parsed.urgency,
+            },
           },
           NextStep: {
             rich_text: [
               {
                 text: {
-                  content: parsed.nextStep
-                }
-              }
-            ]
-          }
-        }
+                  content: parsed.nextStep,
+                },
+              },
+            ],
+          },
+        },
       })
       const { error } = await supabase.from('feedback_tasks').insert({
         external_id: response.id,
@@ -83,7 +87,7 @@ export class NotionService {
         next_step: parsed.nextStep,
         source: options?.source || 'Slack',
         destination: 'Notion',
-        metadata: options?.metadata || {}
+        metadata: options?.metadata || {},
       })
 
       if (error) {
@@ -92,7 +96,6 @@ export class NotionService {
         logger.info('Stored feedback task in Supabase')
       }
 
-  
       logger.info('Feedback task created in Notion', { pageId: response.id })
       return response
     } catch (error) {
@@ -103,18 +106,18 @@ export class NotionService {
 
   private buildFilters(rawFilters: any) {
     const filters = []
-    
+
     if (rawFilters.tag) {
       filters.push({
         property: 'Tag',
-        select: { equals: capitalize(rawFilters.tag) }
+        select: { equals: capitalize(rawFilters.tag) },
       })
     }
 
     if (rawFilters.urgency) {
       filters.push({
         property: 'Urgency',
-        select: { equals: rawFilters.urgency }
+        select: { equals: rawFilters.urgency },
       })
     }
 
@@ -123,7 +126,7 @@ export class NotionService {
       if (Validators.isValidISODate(from) && Validators.isValidISODate(to)) {
         filters.push({
           property: 'Created Date',
-          date: { on_or_after: from, on_or_before: to }
+          date: { on_or_after: from, on_or_before: to },
         })
       }
     }
@@ -131,4 +134,3 @@ export class NotionService {
     return filters.length ? { and: filters } : undefined
   }
 }
-

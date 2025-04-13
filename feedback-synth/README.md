@@ -13,7 +13,7 @@ PuMi is an AI-powered feedback intelligence tool that connects with your Slack w
 ✅ Securely stores Slack access token in user session  
 ✅ Fetches messages from a specific Slack channel (e.g. `#user-feedback`)  
 ✅ Syncs messages into a Supabase (Postgres) database  
-✅ API endpoint ready to build GPT-powered trend reports  
+✅ API endpoint ready to build GPT-powered trend reports
 
 ## 🧑‍💻 Tech Stack
 
@@ -25,24 +25,25 @@ PuMi is an AI-powered feedback intelligence tool that connects with your Slack w
 - **Dev Tools:** ngrok for local HTTPS tunneling (Slack-compatible)
 
 ## 📦 Project Structure (Partial)
-
 ```
+
 app/
-  api/
-    auth/
-      [...nextauth]      # NextAuth API route
-      options.ts         # NextAuth config
-    slack/
-      sync/              # POST route to sync Slack messages
-  messages/              # Frontend page for displaying messages or reports
-  layout.tsx
-  page.tsx
+api/
+auth/
+[...nextauth] # NextAuth API route
+options.ts # NextAuth config
+slack/
+sync/ # POST route to sync Slack messages
+messages/ # Frontend page for displaying messages or reports
+layout.tsx
+page.tsx
 lib/
-  slack-utils.ts         # Slack API helper (conversations.history)
-  supabase.ts            # Supabase client
+slack-utils.ts # Slack API helper (conversations.history)
+supabase.ts # Supabase client
 .env
 README.md
-```
+
+````
 
 ## 🧪 How to Run Locally
 
@@ -51,13 +52,14 @@ README.md
 git clone https://github.com/your-username/pumi.git
 cd pumi
 npm install
-```
+````
 
 ---
 
 ### 2. Set up `.env` file
 
 ### 3. Start your local server
+
 ```bash
 npm run dev
 ```
@@ -65,6 +67,7 @@ npm run dev
 ---
 
 ### 4. Start ngrok (to expose localhost for Slack OAuth)
+
 ```bash
 ngrok http 3000
 ```
@@ -77,6 +80,7 @@ ngrok http 3000
 ### 5. Update Slack app settings
 
 Go to [https://api.slack.com/apps](https://api.slack.com/apps):
+
 - Navigate to your app
 - Go to **OAuth & Permissions**
 - Add this to **Redirect URLs**:
