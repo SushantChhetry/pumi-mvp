@@ -22,9 +22,9 @@
  * - users:read
  * - users.profile:read
  */
-import { NextRequest, NextResponse } from 'next/server'
+import {  NextResponse } from 'next/server'
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const clientId = process.env.SLACK_CLIENT_ID
   const redirectUri = process.env.SLACK_REDIRECT_URI
   const scopes = [

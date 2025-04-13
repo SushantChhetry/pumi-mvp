@@ -98,6 +98,7 @@ function secureCompare(a: string, b: string) {
 }
 
 import { Block } from '@slack/types'
+import { GptData, SlackInteractionPayload } from 'types/type'
 
 async function postSlackMessage(channel: string, text: string, blocks?: Block[]) {
   const token = process.env.SLACK_BOT_TOKEN!
@@ -115,14 +116,14 @@ function cleanText(text: string): string {
   return decodeURIComponent((text || '').replace(/\+/g, ' '))
 }
 
-async function handleConfirm(payload: any, gptData: any) {
+async function handleConfirm(payload: SlackInteractionPayload, gptData: GptData) {
   console.log('[Confirming Feedback]', gptData)
 
   try {
-    const summary = cleanText(gptData.summary)
+    const summary = cleanText(gptData.summary ?? '')
     const tag = cleanText(gptData.tag || 'Other')
     const urgency = cleanText(gptData.urgency || 'Medium')
-    const nextStep = cleanText(gptData.nextStep)
+    const nextStep = cleanText(gptData.nextStep ?? '')
     const pageId = gptData.pageId || payload.view?.private_metadata
 
     if (pageId) {
@@ -177,7 +178,7 @@ async function handleConfirm(payload: any, gptData: any) {
     console.error('[Notion Insert/Update Error]', err)
   }
 }
-async function handleFlagSubmission(payload: any, gptData: any, reason: string) {
+async function handleFlagSubmission(payload: SlackInteractionPayload, gptData: GptData , reason: string) {
   const userId = payload.user?.id
   const channel = payload.channel?.id || payload.container?.channel_id
   const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C01ABCXYZ'
@@ -206,26 +207,13 @@ async function handleFlagSubmission(payload: any, gptData: any, reason: string) 
     [
       {
         type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '✅ Regenerate' },
-            action_id: 'regenerate_feedback',
-            value: JSON.stringify(gptData),
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '❌ Ignore' },
-            action_id: 'ignore_feedback',
-            value: JSON.stringify({}),
-          },
-        ],
+        
       },
     ],
   )
 }
 
-async function handleEdit(payload: any, gptData: any, token: string) {
+async function handleEdit(payload: SlackInteractionPayload, gptData: GptData, token: string) {
   console.log('[handleEdit] called with:', gptData)
 
   const triggerId = payload.trigger_id
@@ -319,7 +307,7 @@ async function handleEdit(payload: any, gptData: any, token: string) {
   }
 }
 
-async function handleFlag(payload: any, gptData: any, token: string) {
+async function handleFlag(payload: SlackInteractionPayload, gptData: GptData, token: string) {
   const triggerId = payload.trigger_id
   if (!triggerId) {
     console.error('[handleFlag] Missing trigger_id')
