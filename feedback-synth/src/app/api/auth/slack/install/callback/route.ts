@@ -55,50 +55,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/?error=missing_oauth_data`)
     }
 
-    logger.info(`[Slack OAuth] Successfully authenticated team: ${teamName} (${teamId})`)
-
-    const { error: upsertTeamError } = await supabase.from('slack_teams').upsert(
-      {
-        team_id: teamId,
-        team_name: teamName,
-        access_token: encryptedToken,
-        bot_user_id
-      },
-      { onConflict: 'team_id' }
-    )
-
-    if (upsertTeamError) {
-      logger.error('[Supabase Upsert Error]', upsertTeamError)
-      return NextResponse.redirect(`${baseUrl}/?error=supabase_upsert_failed`)
-    }
-
-    logger.info(`[Database] Team ${teamName} (${teamId}) upserted successfully`)
-
-    const userId = authed_user?.id
-    let realName = 'pumi'
-
-    if (userId) {
-      const userInfoRes = await fetch('https://slack.com/api/users.info', {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${access_token}` },
-        next: { revalidate: 0 }
-      })
-
-      const userInfo = await userInfoRes.json()
-      realName = userInfo?.user?.real_name?.toLowerCase() || 'pumi'
-
-      await supabase.from('slack_users').upsert(
-        {
-          id: userId,
-          name: realName
-        },
-        { onConflict: 'id' }
-      )
-
-      logger.info(`[Database] User ${realName} (${userId}) upserted successfully`)
-    }
-
-    // Create or reuse #pumi-hub channel
+    // === Create or reuse #pumi-hub channel BEFORE upserting ===
     const channelName = 'pumi-hub'
     logger.info(`[Slack] Creating channel: ${channelName}`)
 
@@ -123,12 +80,60 @@ export async function GET(req: NextRequest) {
           headers: { Authorization: `Bearer ${access_token}` }
         })
         const listData = await listRes.json()
-        channelId = listData.channels?.find((c: any) => c.name === channelName)?.id
+        type SlackChannel = { id: string; name: string };
+        channelId = listData.channels?.find((c: SlackChannel) => c.name === channelName)?.id
       } else {
         logger.error('[Channel Creation Error]', createChannelData)
       }
     } else {
       logger.info(`[Slack] Channel ${channelName} created successfully`)
+    }
+
+    // === Now safe to use channelId in your upsert ===
+    logger.info(`[Slack OAuth] Successfully authenticated team: ${teamName} (${teamId})`)
+
+    const { error: upsertTeamError } = await supabase.from('slack_teams').upsert(
+      {
+        team_id: teamId,
+        team_name: teamName,
+        access_token: encryptedToken,
+        bot_user_id,
+        channel_id: channelId
+      },
+      { onConflict: 'team_id' }
+    )
+
+    if (upsertTeamError) {
+      logger.error('[Supabase Upsert Error]', upsertTeamError)
+      return NextResponse.redirect(`${baseUrl}/?error=supabase_upsert_failed`)
+    }
+
+    logger.info(`[Database] Team ${teamName} (${teamId}) upserted successfully`)
+
+    // Get user info
+    const userId = authed_user?.id
+    let realName = 'pumi'
+
+    if (userId) {
+      const userInfoRes = await fetch('https://slack.com/api/users.info', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${access_token}` },
+        next: { revalidate: 0 }
+      })
+
+      const userInfo = await userInfoRes.json()
+      realName = userInfo?.user?.real_name?.toLowerCase() || 'pumi'
+
+      await supabase.from('slack_users').upsert(
+        {
+          id: userId,
+          name: realName,
+          team_id: teamId
+        },
+        { onConflict: 'id' }
+      )
+
+      logger.info(`[Database] User ${realName} (${userId}) upserted successfully`)
     }
 
     // Invite user to the channel (optional)
