@@ -4,6 +4,7 @@ import { MessageHandler } from './messageHandler'
 import { NextResponse } from 'next/server'
 import { logger } from '@/lib/utils/logger'
 import { AppError } from '@/lib/errors'
+import { decrypt } from '@/lib/utils/crypto' // ✅ Decryption helper
 
 export class SlackEventHandler {
   private readonly event: SlackEventBody['event']
@@ -17,16 +18,20 @@ export class SlackEventHandler {
     this.teamId = body.team_id
   }
 
-  private async getPumiHubChannelId(accessToken: string): Promise<string | null> {
+  private async getPumiHubChannelId(decryptedToken: string): Promise<string | null> {
     try {
       const res = await fetch('https://slack.com/api/conversations.list', {
         method: 'GET',
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: { Authorization: `Bearer ${decryptedToken}` }
       })
       const data = await res.json()
-      return data.channels?.find((c: any) => c.name === 'pumi-hub')?.id ?? null
+      interface SlackChannel {
+        id: string;
+        name: string;
+      }
+      return data.channels?.find((c: SlackChannel) => c.name === 'pumi-hub')?.id ?? null
     } catch (err) {
-      logger.error('[Slack] Failed to fetch channel list', 
+      logger.error('[Slack] Failed to fetch channel list',
         err instanceof Error ? { message: err.message, stack: err.stack } : { error: err })
       return null
     }
@@ -52,7 +57,9 @@ export class SlackEventHandler {
       return this.defaultResponse()
     }
 
-    const hubChannelId = await this.getPumiHubChannelId(teamData.access_token)
+    const decryptedToken = decrypt(teamData.access_token) // ✅ Decrypt token
+
+    const hubChannelId = await this.getPumiHubChannelId(decryptedToken)
     const isInHub = this.event?.channel === hubChannelId
     const text = this.event?.text?.trim().toLowerCase() ?? ''
 
@@ -66,7 +73,7 @@ export class SlackEventHandler {
       return new MessageHandler(
         message,
         this.event.channel ?? '',
-        teamData.access_token,
+        decryptedToken,
         this.event.user ?? '',
         intent,
         'pumi' // 👈 PuMi's own feedback bucket
@@ -74,12 +81,15 @@ export class SlackEventHandler {
     }
 
     // 🧠 Bot was mentioned outside hub channel → handle company feedback/query
-    return this.handleMessageEvent(teamData)
+    return this.handleMessageEvent({
+      access_token: decryptedToken,
+      bot_user_id: teamData.bot_user_id
+    })
   }
 
   private isValidMessageEvent() {
-    return this.event?.type === 'message' && 
-           !this.event.bot_id && 
+    return this.event?.type === 'message' &&
+           !this.event.bot_id &&
            !!this.event.text
   }
 
@@ -92,8 +102,6 @@ export class SlackEventHandler {
     const prefix = `${mention} ${intent}:`
     return text.replace(prefix, '').trim()
   }
-  
-  
 
   private async storeMessage() {
     try {
@@ -154,9 +162,9 @@ export class SlackEventHandler {
   private parseCommandIntent(botUserId: string): 'feedback' | 'query' | 'bug' | undefined {
     const mention = `<@${botUserId.toLowerCase()}>`
     const text = this.event?.text?.trim().toLowerCase().replace(/\s+/g, ' ') ?? ''
-  
+
     logger.info('Parsing command intent', { mention, text })
-  
+
     if (text.startsWith(`${mention} feedback:`)) {
       logger.info('Detected feedback intent')
       return 'feedback'
@@ -167,11 +175,10 @@ export class SlackEventHandler {
       logger.info('Detected bug intent')
       return 'bug'
     }
-  
+
     logger.info('No valid intent detected')
     return undefined
   }
-  
 
   private defaultResponse() {
     return NextResponse.json({ ok: true })

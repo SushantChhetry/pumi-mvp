@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { Client as NotionClient } from '@notionhq/client'
 import { createClient } from '@supabase/supabase-js'
+import { decrypt } from '@/lib/utils/crypto'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,15 +67,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing bot token' }, { status: 500 })
     }
 
+    const decryptedToken = decrypt(teamData.access_token)
+
     switch (actionId) {
       case 'confirm_feedback':
         await handleConfirm(payload, gptData)
         break
       case 'edit_feedback':
-        await handleEdit(payload, gptData, teamData.access_token)
+        await handleEdit(payload, gptData, decryptedToken)
         break
       case 'flag_feedback':
-        await handleFlag(payload, gptData, teamData.access_token)
+        await handleFlag(payload, gptData, decryptedToken)
         break
       default:
         console.log('Unknown action:', actionId)

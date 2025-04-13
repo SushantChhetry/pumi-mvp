@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { decrypt } from '@/lib/utils/crypto' 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,13 +76,17 @@ export async function GET() {
     }
 
     // 5. Post summary to Slack
-    const { data: teams, error: teamError } = await supabase.from('slack_teams').select('*').limit(1)
+    const { data: teams, error: teamError } = await supabase
+      .from('slack_teams')
+      .select('*')
+      .limit(1)
 
     if (teamError || !teams?.length) {
       console.error('[Slack Post Error] Missing bot token')
     } else {
-      const token = teams[0].access_token
-      const channelId = process.env.SLACK_SUMMARY_CHANNEL_ID
+      const encryptedToken = teams[0].access_token
+      const decryptedToken = decrypt(encryptedToken) //  Decrypt before using
+      const channelId = process.env.SLACK_SUMMARY_CHANNEL_ID || teams[0].channel_id
 
       if (!channelId) {
         console.error('[Slack Post Error] Missing SLACK_SUMMARY_CHANNEL_ID env var')
@@ -89,7 +94,7 @@ export async function GET() {
         const postRes = await fetch('https://slack.com/api/chat.postMessage', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${decryptedToken}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
