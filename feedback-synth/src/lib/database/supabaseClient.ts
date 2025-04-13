@@ -49,23 +49,23 @@ export class SupabaseService {
    */
   async getNotionDbIdForTeam(teamId: string): Promise<string | null> {
     logger.info('[Supabase] getNotionDbIdForTeam called')
-  
+
     if (!teamId || typeof teamId !== 'string') {
       logger.error('[Supabase] Invalid teamId provided to getNotionDbIdForTeam', { teamId })
       return null
     }
-  
+
     try {
       const { data, error } = await this.client
         .from('notion_databases')
         .select('notion_db_id')
         .eq('team_id', teamId.trim())
         .single()
-  
+
       if (error && error.code !== 'PGRST116') throw error
-  
+
       logger.info('[Supabase] getNotionDbIdForTeam result', { data })
-  
+
       return data?.notion_db_id ?? null
     } catch (error) {
       logger.error('[Supabase] Failed to fetch Notion DB ID for team', { teamId, error })
@@ -76,18 +76,16 @@ export class SupabaseService {
     }
   }
 
-
   /**
    * Checks if a Slack event with the given event ID has already been processed
    * @param {string} eventId - The event ID to check
    * @returns {Promise<boolean>} true if the event has already been processed, false otherwise
    */
   async isDuplicateSlackEvent(eventId: string): Promise<boolean> {
-    const result = await this.query('slack_events', 'select', { event_id: eventId });
-    return result && result.length > 0;
+    const result = await this.query('slack_events', 'select', { event_id: eventId })
+    return result && result.length > 0
   }
 
-  
   /**
    * Marks a Slack event as processed in the database
    * @param {string} eventId - The event ID to mark as processed
@@ -96,14 +94,14 @@ export class SupabaseService {
    */
 
   async markSlackEventProcessed(eventId: string, teamId: string) {
-    return await this.query('slack_events', 'insert', [{
-      event_id: eventId,
-      team_id: teamId,
-      processed_at: new Date().toISOString(),
-    }])
+    return await this.query('slack_events', 'insert', [
+      {
+        event_id: eventId,
+        team_id: teamId,
+        processed_at: new Date().toISOString(),
+      },
+    ])
   }
-  
-  
 
   /**
    * Links a Notion database to a Slack team
@@ -251,5 +249,5 @@ export class SupabaseService {
 // Singleton instance setup
 export const supabaseClient = new SupabaseService(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )

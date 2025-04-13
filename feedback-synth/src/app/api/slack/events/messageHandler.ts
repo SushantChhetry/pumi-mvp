@@ -65,7 +65,7 @@ export class MessageHandler {
 
   private async handleFeedback() {
     logger.info('Processing feedback intent with OpenAI', { textLength: this.text.length })
-  
+
     try {
       const gptResponse = await this.openAI.processText({
         mode: 'parse',
@@ -76,34 +76,33 @@ export class MessageHandler {
         logger.error('[handleFeedback] Missing teamId in context')
         return NextResponse.json({ ok: false, error: 'Missing team ID' }, { status: 400 })
       }
-      
-  
+
       logger.info('Received GPT response for feedback', { gptResponse })
-  
+
       const parsed = Formatters.parseFeedback(gptResponse)
-  
+
       if (this.intent === 'bug') {
         parsed.tag = 'Bug'
         parsed.urgency = 'High'
         parsed.summary = `[BUG] ${parsed.summary}`
         logger.info('Tagging parsed feedback as bug', { parsed })
       }
-  
+
       logger.info('Parsed feedback from GPT response', { parsed })
-  
+
       let notionUrl: string | undefined = undefined
-  
+
       if (this.target === 'customer') {
         logger.info('[Supabase] getNotionDbIdForTeam called')
         const notionDbId = await supabaseClient.getNotionDbIdForTeam(this.teamId)
-  
+
         logger.info('[Supabase] getNotionDbIdForTeam result', { notionDbId })
-  
+
         if (!notionDbId) {
           logger.error('[Notion] No Notion DB found for team', { teamId: this.teamId })
           return NextResponse.json({ ok: false, error: 'Notion DB not found' }, { status: 404 })
         }
-  
+
         const notionPage = await this.notion.createFeedbackTask(parsed, {
           source: 'Slack',
           metadata: {
@@ -113,7 +112,7 @@ export class MessageHandler {
           },
           databaseId: notionDbId,
         })
-  
+
         if ('url' in notionPage) {
           notionUrl = notionPage.url
         }
@@ -129,14 +128,14 @@ export class MessageHandler {
             tag: parsed.tag,
           },
         })
-  
+
         if (error) {
           logger.error('[Supabase] Failed to store PuMi feedback', error)
         } else {
           logger.info('[Supabase] Stored PuMi feedback successfully')
         }
       }
-  
+
       const blocks = Formatters.formatFeedbackBlocks(parsed)
       if (notionUrl) {
         logger.info('Adding Notion URL to Slack message blocks', { notionUrl })
@@ -150,31 +149,26 @@ export class MessageHandler {
           ],
         })
       }
-  
+
       logger.info('Sending feedback message to Slack', { channel: this.channel })
-  
+
       const slackRes = await this.slackMessages.send({
         channel: this.channel,
         blocks,
         token: this.accessToken,
       })
-  
+
       logger.info('Slack message sent successfully', { slackRes })
       return NextResponse.json({ ok: true, slackRes })
-  
     } catch (error) {
       logger.error('[Slack] Event handling failed', {
         error: error instanceof Error ? error.message : error,
         stack: error instanceof Error ? error.stack : null,
       })
-  
-      return NextResponse.json(
-        { ok: false, error: 'Unexpected error occurred' },
-        { status: 500 }
-      )
+
+      return NextResponse.json({ ok: false, error: 'Unexpected error occurred' }, { status: 500 })
     }
   }
-  
 
   private parseFilters(gptResponse: string) {
     try {

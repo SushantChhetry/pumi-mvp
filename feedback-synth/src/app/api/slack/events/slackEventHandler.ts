@@ -25,9 +25,14 @@ export class SlackEventHandler {
         headers: { Authorization: `Bearer ${decryptedToken}` },
       })
       const data = await res.json()
-      return data.channels?.find((c: { id: string; name: string }) => c.name === 'pumi-hub')?.id ?? null
+      return (
+        data.channels?.find((c: { id: string; name: string }) => c.name === 'pumi-hub')?.id ?? null
+      )
     } catch (err) {
-      logger.error('[Slack] Failed to fetch channel list', err instanceof Error ? { message: err.message, stack: err.stack } : { error: err })
+      logger.error(
+        '[Slack] Failed to fetch channel list',
+        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err },
+      )
       return null
     }
   }
@@ -38,21 +43,21 @@ export class SlackEventHandler {
       channel: this.event?.channel,
       text: this.event?.text,
     })
-  
+
     const uniqueEventId = this.body.event_id || this.event?.ts || 'unknown'
-  
+
     if (!this.isValidMessageEvent()) {
       logger.info('Ignoring non-message event or bot message')
       return this.defaultResponse()
     }
-  
+
     // Prevent duplicate task creation by checking event_id
     const isDuplicate = await this.supabase.isDuplicateSlackEvent(uniqueEventId)
     if (isDuplicate) {
       logger.warn('[Slack] Duplicate event received. Skipping.', { eventId: uniqueEventId })
       return this.defaultResponse()
     }
-  
+
     // Mark event as processed
     try {
       await this.supabase.markSlackEventProcessed(uniqueEventId, this.teamId || 'unknown')
@@ -60,29 +65,29 @@ export class SlackEventHandler {
       logger.error('[Slack] Failed to mark event as processed', { uniqueEventId, err })
       return this.defaultResponse()
     }
-  
+
     await this.storeMessage()
-  
+
     const teamData = await this.supabase.getSlackTeamData(this.teamId || '')
     if (!teamData?.access_token) {
       logger.error('Missing Slack team access token')
       return this.defaultResponse()
     }
-  
+
     const decryptedToken = decrypt(teamData.access_token)
     const hubChannelId = await this.getPumiHubChannelId(decryptedToken)
     const isInHub = this.event?.channel === hubChannelId
     const rawText = this.event?.text?.trim().toLowerCase() ?? ''
     const cleanedText = rawText.replace(/^<@[^>]+>\s*/, '')
-  
+
     if (isInHub && (cleanedText.startsWith('bug:') || cleanedText.startsWith('feedback:'))) {
       const intent: 'feedback' | 'bug' = cleanedText.startsWith('bug:') ? 'bug' : 'feedback'
       const message = this.event.text!.split(':').slice(1).join(':').trim()
-  
+
       await this.sendLoadingMessage(decryptedToken)
-  
+
       logger.info(`[Slack] Handling ${intent} command in #pumi-hub`, { message })
-  
+
       return new MessageHandler(
         message,
         this.event.channel ?? '',
@@ -90,17 +95,15 @@ export class SlackEventHandler {
         this.event.user ?? '',
         intent,
         'pumi',
-        this.teamId || hubChannelId
+        this.teamId || hubChannelId,
       ).handle()
     }
-  
+
     return this.handleMessageEvent({
       access_token: decryptedToken,
       bot_user_id: teamData.bot_user_id,
     })
   }
-  
-  
 
   private isValidMessageEvent() {
     return this.event?.type === 'message' && !this.event.bot_id && !!this.event.text
@@ -153,7 +156,7 @@ export class SlackEventHandler {
     } catch (err) {
       logger.warn(
         'Failed to send loading message',
-        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err }
+        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err },
       )
     }
   }
@@ -179,7 +182,7 @@ export class SlackEventHandler {
         this.event?.user ?? '',
         intent,
         'customer',
-        this.teamId || ''
+        this.teamId || '',
       ).handle()
     } catch (error) {
       logger.error('Message handling failed', {

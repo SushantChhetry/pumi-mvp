@@ -4,9 +4,19 @@ import { SlackError } from '../errors'
 
 interface MessagePayload {
   channel: string
-  blocks: any[]
+  blocks: Block[]
   token: string
   text?: string
+}
+
+interface Block {
+  type: string
+  text?: {
+    type: string
+    text: string
+    emoji?: boolean
+  }
+  [key: string]: unknown
 }
 
 export class SlackMessages {

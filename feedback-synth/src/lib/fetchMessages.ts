@@ -14,5 +14,5 @@ export async function getChannelId(token: string, channelName: string) {
     },
   })
   const data = await res.json()
-  return data.channels.find((c: any) => c.name === channelName)?.id
+  return data.channels.find((c: { name: string; id: string }) => c.name === channelName)?.id
 }

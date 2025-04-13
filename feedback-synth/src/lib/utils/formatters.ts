@@ -70,7 +70,11 @@ export class Formatters {
         ? `Results for: ${filterText.join(' | ')}`
         : `Showing ${pages.length} result(s)`
 
-    const blocks: any[] = [
+    const blocks: Array<{
+      type: string
+      text?: { type: string; text: string }
+      elements?: Array<{ type: string; text: string }>
+    }> = [
       {
         type: 'section',
         text: { type: 'mrkdwn', text: `:clipboard: ${headerText}` },
@@ -89,7 +93,8 @@ export class Formatters {
 
       // Fallback order: Summary.rich_text > dynamic title field
       const titleProp = Object.values(props).find(
-        (p: any): p is NotionProperty => p?.type === 'title' && Array.isArray(p.title),
+        (p: NotionProperty | undefined): p is NotionProperty =>
+          p?.type === 'title' && Array.isArray(p.title),
       )
 
       const summary =

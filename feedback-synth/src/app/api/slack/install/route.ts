@@ -22,7 +22,7 @@
  * - users:read
  * - users.profile:read
  */
-import {  NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 
 export async function GET() {
   const clientId = process.env.SLACK_CLIENT_ID

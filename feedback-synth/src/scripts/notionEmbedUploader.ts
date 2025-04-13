@@ -130,12 +130,14 @@ async function getFullPageText(pageId: string): Promise<string> {
   for (const block of blocks.results) {
     if (!('type' in block)) continue
 
-    const contentBlock = block as any
+    const contentBlock = block as { type: string; [key: string]: unknown }
     const blockType = contentBlock.type
 
-    if (contentBlock[blockType]?.rich_text) {
-      const line = contentBlock[blockType].rich_text
-        .map((textObj: any) => textObj.plain_text)
+    if ((contentBlock[blockType] as { rich_text?: { plain_text: string }[] })?.rich_text) {
+      const line = (
+        (contentBlock[blockType] as { rich_text?: { plain_text: string }[] }).rich_text ?? []
+      )
+        .map((textObj: { plain_text: string }) => textObj.plain_text)
         .join('')
       if (line.trim()) lines.push(line)
     }

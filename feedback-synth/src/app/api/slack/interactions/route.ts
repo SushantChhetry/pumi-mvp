@@ -178,7 +178,11 @@ async function handleConfirm(payload: SlackInteractionPayload, gptData: GptData)
     console.error('[Notion Insert/Update Error]', err)
   }
 }
-async function handleFlagSubmission(payload: SlackInteractionPayload, gptData: GptData , reason: string) {
+async function handleFlagSubmission(
+  payload: SlackInteractionPayload,
+  gptData: GptData,
+  reason: string,
+) {
   const userId = payload.user?.id
   const channel = payload.channel?.id || payload.container?.channel_id
   const adminChannel = process.env.SLACK_ADMIN_CHANNEL_ID || 'C01ABCXYZ'
@@ -207,7 +211,6 @@ async function handleFlagSubmission(payload: SlackInteractionPayload, gptData: G
     [
       {
         type: 'actions',
-        
       },
     ],
   )
