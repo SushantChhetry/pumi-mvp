@@ -169,35 +169,81 @@ export async function GET(req: NextRequest) {
     }
 
     if (channelId) {
-      logger.info(`[Slack] Posting onboarding message to channel ${channelId}`)
-      await fetch('https://slack.com/api/chat.postMessage', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel: channelId,
-          text: '👋 Welcome to PuMi! Here’s how to get started:',
-          blocks: [
-            {
+      try {
+        // 1. Welcome message
+        logger.info(`[Slack] Posting welcome message to channel ${channelId}`);
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: channelId,
+            text: '👋 Welcome to PuMi - Your Product Feedback Assistant!',
+            blocks: [{
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text: '*👋 Welcome to PuMi!* Your product feedback assistant is ready to go.',
-              },
-            },
-            {
+                text: '*👋 Welcome to PuMi!*\nI help teams collect, organize, and act on user feedback. I can automatically create tasks in Notion and provide insights about feedback trends.'
+              }
+            }]
+          }),
+        });
+    
+        // 2. Channel setup instructions
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: channelId,
+            text: 'Channel setup instructions',
+            blocks: [{
               type: 'section',
               text: {
                 type: 'mrkdwn',
-                text:
-                  '1. Try `/summary` to get a report of recent feedback\n' +
-                  '2. Mention `@PuMi-MVP` and send feedback using `feedback:`\n' +
-                  '3. Use `query:` to explore issues and trends\n\n' +
-                  '_Need help? Just reply in this channel._',
-              },
-            },
-          ],
-        }),
-      })
+                text: '*📌 Channel Setup*\nFor best results:\n1. Invite me to your `#user-feedback` channel\n2. In that channel, use `@PuMi bug:XYZ` or `@PuMi feedback:XYZ` to create tasks\n3. Use `/board` to get your Notion board link'
+              }
+            }]
+          }),
+        });
+    
+        // 3. Current channel instructions
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: channelId,
+            text: 'How to use this channel',
+            blocks: [{
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*💡 Using this channel (#pumi-hub)*\nHere you can simply type:\n• `bug: XYZ` (no @ needed)\n• `feedback: XYZ`\nI\'ll automatically create tasks in your board!'
+              }
+            }]
+          }),
+        });
+    
+        // 4. Commands overview
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: channelId,
+            text: 'Available commands',
+            blocks: [{
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '*🛠 Available Commands*\n• `/summary` - Get recent feedback report\n• `/board` - Get your Notion board link\n• `/help` - Show these instructions again'
+              }
+            }]
+          }),
+        });
+    
+      } catch (err) {
+        logger.error('[Slack Message Error]', 
+          err instanceof Error ? { message: err.message, stack: err.stack } : { error: err }
+        );
+      }
     }
 
     logger.info(`[Slack Bot Installed] Team: ${teamName} (${teamId})`)
