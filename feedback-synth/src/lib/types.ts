@@ -32,4 +32,5 @@ export interface SlackEventBody {
     event_id?: string
   }
   team_id?: string
+  event_id?: string
 }

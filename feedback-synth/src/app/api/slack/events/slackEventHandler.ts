@@ -39,20 +39,27 @@ export class SlackEventHandler {
       text: this.event?.text,
     })
   
+    const uniqueEventId = this.body.event_id || this.event?.ts || 'unknown'
+  
     if (!this.isValidMessageEvent()) {
       logger.info('Ignoring non-message event or bot message')
       return this.defaultResponse()
     }
   
     // Prevent duplicate task creation by checking event_id
-    const isDuplicate = await this.supabase.isDuplicateSlackEvent(this.body.event_id)
+    const isDuplicate = await this.supabase.isDuplicateSlackEvent(uniqueEventId)
     if (isDuplicate) {
-      logger.warn('[Slack] Duplicate event received. Skipping.', { eventId: this.body.event_id })
+      logger.warn('[Slack] Duplicate event received. Skipping.', { eventId: uniqueEventId })
       return this.defaultResponse()
     }
   
     // Mark event as processed
-    await this.supabase.markSlackEventProcessed(this.body.event?.event_id || 'unknown', this.teamId || 'unknown')
+    try {
+      await this.supabase.markSlackEventProcessed(uniqueEventId, this.teamId || 'unknown')
+    } catch (err) {
+      logger.error('[Slack] Failed to mark event as processed', { uniqueEventId, err })
+      return this.defaultResponse()
+    }
   
     await this.storeMessage()
   
@@ -92,6 +99,7 @@ export class SlackEventHandler {
       bot_user_id: teamData.bot_user_id,
     })
   }
+  
   
 
   private isValidMessageEvent() {
