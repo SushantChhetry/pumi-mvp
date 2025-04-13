@@ -10,6 +10,8 @@ export async function GET(req: NextRequest) {
   const error = req.nextUrl.searchParams.get('error')
   const baseUrl = process.env.SLACK_APP_BASE_URL || req.nextUrl.origin
 
+  const welcomePageUrl = `https://energetic-mammal-703.notion.site/Welcome-to-PuMi-1d4e3307bb3480ad83effad21e00a999?pvs=4`
+
   if (error) {
     logger.error('[Slack OAuth Error]', { error })
     return NextResponse.redirect(`${baseUrl}/?error=${error}`)
@@ -255,7 +257,7 @@ export async function GET(req: NextRequest) {
     }
 
     logger.info(`[Slack Bot Installed] Team: ${teamName} (${teamId})`)
-    return NextResponse.redirect(`${baseUrl}/messages`)
+    return NextResponse.redirect(welcomePageUrl)
   } catch (err) {
     logger.error(
       '[OAuth Callback Error]',
