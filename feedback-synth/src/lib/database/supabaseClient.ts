@@ -37,7 +37,7 @@ export class SupabaseService {
     details: string
     user_id: string
     channel_id: string
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }) {
     return await this.client.from('pumi_feedback').insert({
       ...entry,
@@ -82,7 +82,9 @@ export class SupabaseService {
    * @returns {Promise<boolean>} true if the event has already been processed, false otherwise
    */
   async isDuplicateSlackEvent(eventId: string): Promise<boolean> {
-    const result = await this.query('slack_events', 'select', { event_id: eventId })
+    const result = await this.query<Array<{ event_id: string }>>('slack_events', 'select', {
+      event_id: eventId,
+    })
     return result && result.length > 0
   }
 
@@ -132,7 +134,7 @@ export class SupabaseService {
     slack_channel_id: string
     text: string
     message_ts: string
-    raw_event: any
+    raw_event: unknown
   }) {
     try {
       const { data, error } = await this.client
@@ -203,10 +205,10 @@ export class SupabaseService {
   /**
    * Generic query method for advanced Supabase operations
    */
-  async query<T = any>(
+  async query<T = unknown>(
     table: string,
     operation: 'select' | 'insert' | 'update' | 'delete',
-    payload?: any,
+    payload?: Record<string, unknown> | Array<Record<string, unknown>>,
   ) {
     try {
       let query
@@ -228,7 +230,7 @@ export class SupabaseService {
       }
 
       if (payload) {
-        query = operation === 'select' ? query.match(payload) : query
+        query = operation === 'select' && !Array.isArray(payload) ? query.match(payload) : query
       }
 
       const { data, error } = await query

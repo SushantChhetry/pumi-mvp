@@ -22,7 +22,11 @@ export class NotionService {
     this.dbId = config.notion.dbId
   }
 
-  async queryDatabase(filters: any) {
+  async queryDatabase(filters: {
+    tag?: string
+    urgency?: string
+    date_range?: { from: string; to: string }
+  }) {
     try {
       logger.info('Querying Notion database', { filters })
 
@@ -40,7 +44,7 @@ export class NotionService {
   }
   async createFeedbackTask(
     parsed: ParsedFeedback,
-    options?: { source?: string; metadata?: any; databaseId?: string },
+    options?: { source?: string; metadata?: Record<string, unknown>; databaseId?: string },
   ) {
     try {
       const dbId = options?.databaseId || this.dbId
@@ -104,7 +108,11 @@ export class NotionService {
     }
   }
 
-  private buildFilters(rawFilters: any) {
+  private buildFilters(rawFilters: {
+    tag?: string
+    urgency?: string
+    date_range?: { from: string; to: string }
+  }) {
     const filters = []
 
     if (rawFilters.tag) {
