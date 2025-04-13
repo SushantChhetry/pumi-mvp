@@ -7,7 +7,7 @@ export interface NotionProperty {
   type: string
   title?: { text?: { content: string } }[]
   rich_text?: { text?: { content: string } }[]
-  select?: { name: string }
+  select?: { name: string } | null
 }
 
 export interface NotionPage {

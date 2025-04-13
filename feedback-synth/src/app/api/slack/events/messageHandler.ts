@@ -2,7 +2,7 @@ import { OpenAIService } from '@/lib/ai/openAIService'
 import { NotionService } from '@/lib/database/notionClient'
 import { SlackMessages } from '@/lib/slack/slackMessages'
 import { supabaseClient } from '@/lib/database/supabaseClient'
-import { Formatters } from '@/lib/utils/formatters'
+import { Formatters, NotionPage } from '@/lib/utils/formatters'
 import { logger } from '@/lib/utils/logger'
 import { NextResponse } from 'next/server'
 
@@ -56,7 +56,7 @@ export class MessageHandler {
 
     const slackResponse = await this.slackMessages.send({
       channel: this.channel,
-      blocks: Formatters.formatQueryResults(results, filters),
+      blocks: Formatters.formatQueryResults(results as NotionPage[], filters),
       token: this.accessToken,
     })
 
