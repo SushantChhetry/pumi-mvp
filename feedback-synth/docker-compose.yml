@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      # Slack Configuration
+      - SLACK_CLIENT_ID=${SLACK_CLIENT_ID}
+      - SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - SLACK_REDIRECT_URI=${SLACK_REDIRECT_URI}
+      - SLACK_SUMMARY_CHANNEL_ID=${SLACK_SUMMARY_CHANNEL_ID}
+      - SLACK_APP_BASE_URL=${SLACK_APP_BASE_URL}
+      
+      # NextAuth Configuration
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      
+      # Next.js Configuration
+      - NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}
+      
+      # Supabase Configuration
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      
+      # Notion Configuration
+      - NOTION_DB_ID=${NOTION_DB_ID}
+      - NOTION_HELP_DOC_DB_ID=${NOTION_HELP_DOC_DB_ID}
+      - NOTION_WEBHOOK_SECRET=${NOTION_WEBHOOK_SECRET}
+      - NOTION_SECRET=${NOTION_SECRET}
+      - NOTION_PARENT_PAGE_ID=${NOTION_PARENT_PAGE_ID}
+      
+      # Encryption
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ENCRYPTION_IV=${ENCRYPTION_IV}
+      
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ngrok:
+    image: wernight/ngrok
+    depends_on:
+      - app
+    environment:
+      - NGROK_AUTH=${NGROK_AUTH_TOKEN}  # Get from ngrok dashboard
+      - NGROK_PROTOCOL=http
+      - NGROK_PORT=app:3000  # Points to your app service
+    ports:
+      - "4040:4040" # ngrok dashboard
+      
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Local Supabase for development (optional)
+  supabase:
+    image: supabase/postgres:15.1.0.81
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - supabase_data:/var/lib/postgresql/data
+
+volumes:
+  redis_data:
+  supabase_data:
