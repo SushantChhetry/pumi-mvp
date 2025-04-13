@@ -4,7 +4,7 @@ import { MessageHandler } from './messageHandler'
 import { NextResponse } from 'next/server'
 import { logger } from '@/lib/utils/logger'
 import { AppError } from '@/lib/errors'
-import { decrypt } from '@/lib/utils/crypto' // ✅ Decryption helper
+import { decrypt } from '@/lib/utils/crypto'
 
 export class SlackEventHandler {
   private readonly event: SlackEventBody['event']
@@ -25,16 +25,9 @@ export class SlackEventHandler {
         headers: { Authorization: `Bearer ${decryptedToken}` },
       })
       const data = await res.json()
-      interface SlackChannel {
-        id: string
-        name: string
-      }
-      return data.channels?.find((c: SlackChannel) => c.name === 'pumi-hub')?.id ?? null
+      return data.channels?.find((c: { id: string; name: string }) => c.name === 'pumi-hub')?.id ?? null
     } catch (err) {
-      logger.error(
-        '[Slack] Failed to fetch channel list',
-        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err },
-      )
+      logger.error('[Slack] Failed to fetch channel list', err instanceof Error ? { message: err.message, stack: err.stack } : { error: err })
       return null
     }
   }
@@ -45,35 +38,44 @@ export class SlackEventHandler {
       channel: this.event?.channel,
       text: this.event?.text,
     })
-
+  
     if (!this.isValidMessageEvent()) {
       logger.info('Ignoring non-message event or bot message')
       return this.defaultResponse()
     }
-
+  
+    // Prevent duplicate task creation by checking event_id
+    const isDuplicate = await this.supabase.isDuplicateSlackEvent(this.body.event_id)
+    if (isDuplicate) {
+      logger.warn('[Slack] Duplicate event received. Skipping.', { eventId: this.body.event_id })
+      return this.defaultResponse()
+    }
+  
+    // Mark event as processed
+    await this.supabase.markSlackEventProcessed(this.body.event?.event_id || 'unknown', this.teamId || 'unknown')
+  
     await this.storeMessage()
-
+  
     const teamData = await this.supabase.getSlackTeamData(this.teamId || '')
     if (!teamData?.access_token) {
       logger.error('Missing Slack team access token')
       return this.defaultResponse()
     }
-
-    const decryptedToken = decrypt(teamData.access_token) // ✅ Decrypt token
-
+  
+    const decryptedToken = decrypt(teamData.access_token)
     const hubChannelId = await this.getPumiHubChannelId(decryptedToken)
     const isInHub = this.event?.channel === hubChannelId
-    const text = this.event?.text?.trim().toLowerCase() ?? ''
-
     const rawText = this.event?.text?.trim().toLowerCase() ?? ''
-    const cleanedText = rawText.replace(/^<@[^>]+>\s*/, '') // remove bot mention if present
-
+    const cleanedText = rawText.replace(/^<@[^>]+>\s*/, '')
+  
     if (isInHub && (cleanedText.startsWith('bug:') || cleanedText.startsWith('feedback:'))) {
-      const intent: 'feedback' | 'bug' = text.startsWith('bug:') ? 'bug' : 'feedback'
+      const intent: 'feedback' | 'bug' = cleanedText.startsWith('bug:') ? 'bug' : 'feedback'
       const message = this.event.text!.split(':').slice(1).join(':').trim()
-
+  
+      await this.sendLoadingMessage(decryptedToken)
+  
       logger.info(`[Slack] Handling ${intent} command in #pumi-hub`, { message })
-
+  
       return new MessageHandler(
         message,
         this.event.channel ?? '',
@@ -81,16 +83,16 @@ export class SlackEventHandler {
         this.event.user ?? '',
         intent,
         'pumi',
-        this.teamId || hubChannelId 
+        this.teamId || hubChannelId
       ).handle()
     }
-
-    // 🧠 Bot was mentioned outside hub channel → handle company feedback/query
+  
     return this.handleMessageEvent({
       access_token: decryptedToken,
       bot_user_id: teamData.bot_user_id,
     })
   }
+  
 
   private isValidMessageEvent() {
     return this.event?.type === 'message' && !this.event.bot_id && !!this.event.text
@@ -127,6 +129,27 @@ export class SlackEventHandler {
     }
   }
 
+  private async sendLoadingMessage(token: string) {
+    try {
+      await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          channel: this?.event?.channel,
+          text: '🧠 Processing your feedback... hang tight!',
+        }),
+      })
+    } catch (err) {
+      logger.warn(
+        'Failed to send loading message',
+        err instanceof Error ? { message: err.message, stack: err.stack } : { error: err }
+      )
+    }
+  }
+
   private async handleMessageEvent(teamData: { access_token: string; bot_user_id: string }) {
     try {
       const intent = this.parseCommandIntent(teamData.bot_user_id)
@@ -137,6 +160,8 @@ export class SlackEventHandler {
         return this.defaultResponse()
       }
 
+      await this.sendLoadingMessage(teamData.access_token)
+
       logger.info(`Recognized PuMi command intent: ${intent}`)
 
       return new MessageHandler(
@@ -145,7 +170,7 @@ export class SlackEventHandler {
         teamData.access_token,
         this.event?.user ?? '',
         intent,
-        'customer', 
+        'customer',
         this.teamId || ''
       ).handle()
     } catch (error) {
@@ -163,16 +188,9 @@ export class SlackEventHandler {
 
     logger.info('Parsing command intent', { mention, text })
 
-    if (text.startsWith(`${mention} feedback:`)) {
-      logger.info('Detected feedback intent')
-      return 'feedback'
-    } else if (text.startsWith(`${mention} query:`)) {
-      logger.info('Detected query intent')
-      return 'query'
-    } else if (text.startsWith(`${mention} bug:`)) {
-      logger.info('Detected bug intent')
-      return 'bug'
-    }
+    if (text.startsWith(`${mention} feedback:`)) return 'feedback'
+    if (text.startsWith(`${mention} query:`)) return 'query'
+    if (text.startsWith(`${mention} bug:`)) return 'bug'
 
     logger.info('No valid intent detected')
     return undefined

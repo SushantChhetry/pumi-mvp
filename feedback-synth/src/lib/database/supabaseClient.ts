@@ -76,6 +76,35 @@ export class SupabaseService {
     }
   }
 
+
+  /**
+   * Checks if a Slack event with the given event ID has already been processed
+   * @param {string} eventId - The event ID to check
+   * @returns {Promise<boolean>} true if the event has already been processed, false otherwise
+   */
+  async isDuplicateSlackEvent(eventId: string): Promise<boolean> {
+    const result = await this.query('slack_events', 'select', { event_id: eventId });
+    return result && result.length > 0;
+  }
+
+  
+  /**
+   * Marks a Slack event as processed in the database
+   * @param {string} eventId - The event ID to mark as processed
+   * @param {string} teamId - The Slack team ID to associate with the event
+   * @returns {Promise<InsertResponse>} The result of the insert query
+   */
+
+  async markSlackEventProcessed(eventId: string, teamId: string) {
+    return await this.query('slack_events', 'insert', [{
+      event_id: eventId,
+      team_id: teamId,
+      processed_at: new Date().toISOString(),
+    }])
+  }
+  
+  
+
   /**
    * Links a Notion database to a Slack team
    */

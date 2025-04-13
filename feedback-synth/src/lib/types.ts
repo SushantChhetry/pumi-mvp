@@ -29,6 +29,7 @@ export interface SlackEventBody {
     channel?: string
     bot_id?: string
     ts?: string
+    event_id?: string
   }
   team_id?: string
 }
