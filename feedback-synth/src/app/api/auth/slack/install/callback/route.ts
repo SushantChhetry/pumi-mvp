@@ -191,7 +191,7 @@ export async function GET(req: NextRequest) {
             ],
           }),
         })
-
+        // Wait for a few seconds before sending the next message
         // 2. Channel setup instructions
         await fetch('https://slack.com/api/chat.postMessage', {
           method: 'POST',
